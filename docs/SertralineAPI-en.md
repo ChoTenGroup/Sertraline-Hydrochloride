@@ -231,11 +231,31 @@ Get all private items of the given UUID and sub-type.
 
 `getAllPrivateItems(uuid: String, sub: SubManagerType): Map<String, ModernSItem>`
 
+### updateSItem (private items)
+
+Update a private item for the given UUID. Persistent updates are also written to the database; returns the previous item, or `null` when the ID was not registered.
+
+`updateSItem(uuid: String, id: String, item: ModernSItem, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
+
+The item's `ModernSItem.key` can also be used as the ID:
+
+`updateSItem(uuid: String, item: ModernSItem, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
+
 ### registerItem
 
 Register an item directly into `itemMap` (public-persistent).
 
 `registerItem(id: String, item: ModernSItem): Unit`
+
+### updateSItem
+
+Update a public item directly in `itemMap`. Returns the replaced item, or `null` when the ID was not previously registered.
+
+`updateSItem(id: String, item: ModernSItem): ModernSItem?`
+
+The item's `ModernSItem.key` can also be used as the ID:
+
+`updateSItem(item: ModernSItem): ModernSItem?`
 
 ### unregisterItem
 

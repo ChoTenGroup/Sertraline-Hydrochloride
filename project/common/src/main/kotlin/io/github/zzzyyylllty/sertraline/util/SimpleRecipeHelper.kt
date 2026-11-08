@@ -64,6 +64,37 @@ object SertralineRecipeManager {
         registeredRecipes.clear()
     }
 
+    /**
+     * Transactional replace of all registered recipes with the given candidates (main-thread only).
+     *
+     * Order: snapshot old set → unregister old → register new. Single-recipe failures are counted
+     * and do not abort the commit; if the commit itself fails unexpectedly, the previous set is
+     * restored so the server keeps working recipes instead of ending up with none.
+     *
+     * @return Pair(successfully registered count, failed count)
+     */
+    fun commitRecipes(candidates: List<RecipeData>): Pair<Int, Int> {
+        val oldEntries = registeredRecipes.toMap()
+        try {
+            unregisterAll()
+            var loaded = 0
+            var errors = 0
+            for (recipe in candidates) {
+                if (registerRecipe(recipe)) loaded++ else errors++
+            }
+            return Pair(loaded, errors)
+        } catch (e: Throwable) {
+            // 补偿：恢复旧注册集（registerRecipe 按相同 id 生成相同的 NamespacedKey）
+            severeS("Recipe commit failed, restoring previous recipes: ${e.message}")
+            registeredRecipes.clear()
+            for ((_, recipeData) in oldEntries) {
+                if (registerRecipe(recipeData)) continue
+                warningS("Failed to restore recipe ${recipeData.id} during rollback")
+            }
+            return Pair(0, candidates.size)
+        }
+    }
+
     // ==================== registration ====================
 
     /**
@@ -72,8 +103,10 @@ object SertralineRecipeManager {
      */
     fun registerRecipe(recipe: RecipeData): Boolean {
         return runCatching {
-            val rawPath = recipe.id.removePrefix("$NAMESPACE:")
-            val path = rawPath.lowercase().replace(Regex("[^a-z0-9/._-]"), "_")
+            // Single source of truth for the path form; NMSRecipeFactory.register() applies the very
+            // same normalization, so the key registered here always matches the one injected there
+            // and the one unregisterAll() later passes back.
+            val path = NMSRecipeFactory.normalizeRecipePath(recipe.id)
             val key = NamespacedKey(NAMESPACE, path)
 
             when (recipe.provider) {
@@ -203,28 +236,32 @@ object SertralineRecipeManager {
     // ==================== Result Builder ====================
 
     private fun buildResultStack(result: RecipeResult): ItemStack? {
-        val (namespace, key) = parseId(result.itemId)
-        return when {
-            namespace == "sertraline" -> {
-                val item = Sertraline.itemMap[key]
+        val ref = io.github.zzzyyylllty.sertraline.recipe.resolveRecipeReference(result.itemId)
+        if (ref == null) {
+            warningS("Recipe result '${result.itemId}' could not be resolved")
+            return null
+        }
+        return when (ref.kind) {
+            io.github.zzzyyylllty.sertraline.recipe.RecipeSourceKind.SERTRALINE -> {
+                val item = Sertraline.itemMap[ref.id]
                 if (item == null) {
-                    warningS("Recipe result item 'sertraline:$key' not found in itemMap (missing item definition?)")
+                    warningS("Recipe result item 'sertraline:${ref.id}' not found in itemMap (missing item definition?)")
                     return null
                 }
-                sertralineItemBuilder(key, null)?.apply { amount = result.count }
+                sertralineItemBuilder(ref.id, null)?.apply { amount = result.count }
             }
-            namespace == "minecraft" || namespace == "vanilla" -> {
-                val mat = Material.matchMaterial(key)
+            io.github.zzzyyylllty.sertraline.recipe.RecipeSourceKind.MINECRAFT -> {
+                val mat = ref.material
                 if (mat == null) {
-                    warningS("Recipe result material '$key' is not a valid Minecraft material")
+                    warningS("Recipe result material '${ref.id}' is not a valid Minecraft material")
                     return null
                 }
                 ItemStack(mat, result.count)
             }
-            else -> {
-                val stack = ExternalItemHelper.buildNoPlayer(namespace, key)
+            io.github.zzzyyylllty.sertraline.recipe.RecipeSourceKind.EXTERNAL -> {
+                val stack = ExternalItemHelper.buildNoPlayer(ref.provider, ref.id)
                 if (stack == null) {
-                    warningS("Recipe result external item '$namespace:$key' not found via ExternalItemHelper")
+                    warningS("Recipe result external item '${ref.provider}:${ref.id}' not found via ExternalItemHelper")
                     return null
                 }
                 stack.apply { amount = result.count }

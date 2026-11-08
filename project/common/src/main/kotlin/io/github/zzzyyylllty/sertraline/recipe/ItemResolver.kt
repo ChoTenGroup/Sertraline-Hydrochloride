@@ -1,7 +1,8 @@
 package io.github.zzzyyylllty.sertraline.recipe
 
 import io.github.zzzyyylllty.sertraline.Sertraline
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.SItemFactory
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.data.RecipeIngredient
 import io.github.zzzyyylllty.sertraline.item.sertralineItemBuilder
 import io.github.zzzyyylllty.sertraline.util.ExternalItemHelper
@@ -38,25 +39,26 @@ object ItemResolver {
     }
 
     private fun resolveItem(itemId: String, amount: Int): RecipeChoice {
-        val (namespace, key) = parseId(itemId)
+        val ref = resolveRecipeReference(itemId)
+            ?: throw IllegalArgumentException("Unknown item reference: $itemId")
 
-        return when {
+        return when (ref.kind) {
             // Vanilla item → MaterialChoice
-            namespace == "minecraft" || namespace == "vanilla" -> {
-                val material = Material.matchMaterial(key)
+            RecipeSourceKind.MINECRAFT -> {
+                val material = ref.material
                     ?: throw IllegalArgumentException("Unknown vanilla material: $itemId")
                 RecipeChoice.MaterialChoice(material)
             }
             // Sertraline's own item → ExactChoice (with NBT)
-            namespace == "sertraline" -> {
-                val sItem = Sertraline.itemMap[key]
+            RecipeSourceKind.SERTRALINE -> {
+                val sItem = Sertraline.itemMap[ref.id]
                     ?: throw IllegalArgumentException("Unknown Sertraline item: $itemId")
                 val stack = buildSertralineStack(sItem, amount)
                 RecipeChoice.ExactChoice(stack)
             }
             // External plugin item → ExactChoice
-            else -> {
-                val stack = buildExternalStack(namespace, key, amount)
+            RecipeSourceKind.EXTERNAL -> {
+                val stack = buildExternalStack(ref.provider, ref.id, amount)
                 RecipeChoice.ExactChoice(stack)
             }
         }
@@ -105,15 +107,6 @@ object ItemResolver {
 
     // ---- Internal helpers ----
 
-    private fun parseId(id: String): Pair<String, String> {
-        val idx = id.indexOf(':')
-        return if (idx == -1) {
-            "minecraft" to id.lowercase()
-        } else {
-            id.substring(0, idx).lowercase() to id.substring(idx + 1)
-        }
-    }
-
     /**
      * Normalizes a tag key:
      * - #minecraft:planks  →  minecraft:planks
@@ -152,7 +145,7 @@ object ItemResolver {
         }
     }
 
-    private fun buildSertralineStack(sItem: ModernSItem, amount: Int): ItemStack {
+    private fun buildSertralineStack(sItem: AbstractSItem, amount: Int): ItemStack {
         val stack = sertralineItemBuilder(sItem.key, null)
             ?: throw IllegalArgumentException("Failed to build Sertraline item: ${sItem.key}")
         stack.amount = amount
@@ -176,11 +169,9 @@ object ItemResolver {
             trimmed.startsWith("#") || trimmed.startsWith("tag:") -> {
                 resolveTag(trimmed, 1)
             }
-            trimmed.contains(":") -> {
-                resolveItem(trimmed, 1)
-            }
+            // 裸名交给 resolveRecipeReference 处理：原版优先，失败回落 Sertraline
             else -> {
-                resolveItem("minecraft:$trimmed", 1)
+                resolveItem(trimmed, 1)
             }
         }
     }

@@ -7,6 +7,7 @@ taboolib {
             name("jhqwqmc")
         }
         dependencies {
+            name("ChoTenTech").optional(true)
             name("DylsemHokma").optional(true)
             name("MythicLib").optional(true)
             name("TrMenu").optional(true)
@@ -39,6 +40,9 @@ taboolib {
     relocate("org.tabooproject.fluxon", "io.github.zzzyyylllty.sertraline.dep.fluxon")
     relocate("com.github.benmanes.caffeine", "io.github.zzzyyylllty.sertraline.dep.caffeine")
     relocate("org.kotlincrypto", "io.github.zzzyyylllty.sertraline.dep.kotlincrypto")
+    // FastStats ships as a self-contained SDK; relocate it so it can never clash with another
+    // plugin that bundles a different FastStats version in the same class loader.
+    relocate("dev.faststats", "io.github.zzzyyylllty.sertraline.dep.faststats")
 //    relocate("org.objectweb.asm", "io.github.zzzyyylllty.sertraline.dep.asm")
 }
 

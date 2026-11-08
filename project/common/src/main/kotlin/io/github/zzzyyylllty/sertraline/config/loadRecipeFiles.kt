@@ -1,7 +1,9 @@
 package io.github.zzzyyylllty.sertraline.config
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.data.*
+import io.github.zzzyyylllty.sertraline.event.SertralineRecipeFileLoadPostEvent
+import io.github.zzzyyylllty.sertraline.event.SertralineRecipeFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.listener.unlockOnlinePlayers
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.severeL
@@ -18,40 +20,10 @@ import java.io.File
 fun loadRecipeFiles() {
     infoL("Recipe_Load")
 
-    val recipesFolder = File(getDataFolder(), "recipes")
-    if (!recipesFolder.exists()) {
-        warningL("Recipe_Load_Regen")
-        releaseResourceFolder("recipes")
-    }
+    val candidates = prepareRecipeCandidates()
+    val (loaded, errors) = commitRecipeCandidates(candidates)
 
-    val files = recipesFolder.listFiles()
-    if (files == null) {
-        severeL("Recipe_Load_Not_Found")
-        return
-    }
-
-    // Unregister all old recipes first
-    SertralineRecipeManager.unregisterAll()
-
-    var loadedCount = 0
-    var errorCount = 0
-    val regex = (config["file-load.recipe"] ?: ".*").toString()
-
-    for (file in files) {
-        if (file.isDirectory) {
-            file.listFiles()?.forEach {
-                val (loaded, errors) = loadRecipeFile(it, regex)
-                loadedCount += loaded
-                errorCount += errors
-            }
-        } else {
-            val (loaded, errors) = loadRecipeFile(file, regex)
-            loadedCount += loaded
-            errorCount += errors
-        }
-    }
-
-    infoL("Recipe_Load_Complete", loadedCount, errorCount)
+    infoL("Recipe_Load_Complete", loaded, errors)
 
     // Recipe book: by default a player's recipe book only holds unlocked recipes (progress-based).
     // Sertraline recipes have no progress source, so they must be actively unlocked when the player joins
@@ -60,51 +32,74 @@ fun loadRecipeFiles() {
 }
 
 /**
- * Loads a single recipe file.
- * @return Pair(recipes loaded successfully, errors)
+ * 阶段 1（可在任意线程）：遍历 recipes/ 目录，解析并校验全部候选 recipe，
+ * 不触碰 Bukkit recipe registry。解析失败按条目记账，不扩大为整文件失败。
  */
-fun loadRecipeFile(file: File, regex: String): Pair<Int, Int> {
-    if (file.isDirectory) {
-        var totalLoaded = 0
-        var totalErrors = 0
-        file.listFiles()?.forEach {
-            val (loaded, errors) = loadRecipeFile(it, regex)
-            totalLoaded += loaded
-            totalErrors += errors
-        }
-        return Pair(totalLoaded, totalErrors)
+fun prepareRecipeCandidates(): List<RecipeData> {
+    SertralineRecipeFileLoadPreEvent().call()
+    val recipesFolder = File(getDataFolder(), "recipes")
+    if (!recipesFolder.exists()) {
+        warningL("Recipe_Load_Regen")
+        releaseResourceFolder("recipes")
     }
 
-    if (!checkRegexMatch(file.name, regex)) {
-        return Pair(0, 0)
+    val candidates = mutableListOf<RecipeData>()
+    val regex = SertralineSettings.fileLoadRecipe
+
+    val files = safeWalkDirectory(recipesFolder, maxDepth = 10) { file ->
+        file.isFile && regex.matches(file.name)
+    }
+    for (file in files) {
+        candidates += parseRecipeFileCandidates(file, regex)
+    }
+    return candidates
+}
+
+/**
+ * 阶段 2（主线程）：用候选整体替换 Bukkit 中的已注册 recipe。
+ * 旧集合先注销，候选注册失败按条目记账；commit 整体异常时恢复旧集合。
+ */
+fun commitRecipeCandidates(candidates: List<RecipeData>): Pair<Int, Int> {
+    return try {
+        val result = SertralineRecipeManager.commitRecipes(candidates)
+        SertralineRecipeFileLoadPostEvent(candidates.size).call()
+        result
+    } catch (e: Exception) {
+        SertralineRecipeFileLoadPostEvent(candidates.size, e).call()
+        throw e
+    }
+}
+
+/**
+ * 解析单个 recipe 文件为候选列表（不注册）。
+ * @return Pair(recipes parsed successfully, errors)
+ */
+private fun parseRecipeFileCandidates(file: File, regex: Regex): List<RecipeData> {
+    if (file.isDirectory) {
+        // 目录递归已由safeWalkDirectory处理，这里直接返回空列表
+        return emptyList()
+    }
+
+    if (!file.name.matches(regex)) {
+        return emptyList()
     }
 
     return try {
-        val raw = multiExtensionLoader(file) ?: return Pair(0, 1)
+        val raw = multiExtensionLoader(file) ?: return emptyList()
         val map = TemplateManager.resolveInMap(raw)
 
-        var loaded = 0
-        var errors = 0
-
+        val candidates = mutableListOf<RecipeData>()
         for ((recipeId, recipeData) in map.entries) {
             try {
-                val recipe = parseRecipe(recipeId, recipeData as? Map<String, Any?> ?: emptyMap())
-                if (SertralineRecipeManager.registerRecipe(recipe)) {
-                    loaded++
-                } else {
-                    severeL("Recipe_Load_Error_Register", file.name, recipeId)
-                    errors++
-                }
+                candidates += parseRecipe(recipeId, recipeData as? Map<String, Any?> ?: emptyMap())
             } catch (e: Exception) {
                 severeL("Recipe_Load_Error_Parse", file.name, recipeId, e.message ?: "Unknown error")
-                errors++
             }
         }
-
-        Pair(loaded, errors)
+        candidates
     } catch (e: Exception) {
         severeL("Recipe_Load_Error_File", file.name, e.message ?: "Unknown error")
-        Pair(0, 1)
+        emptyList()
     }
 }
 
@@ -123,6 +118,42 @@ private fun Map<String, Any?>.getFlexibleList(key: String): List<Any?> {
         is List<*> -> value.toList()
         else -> listOf(value)
     }
+}
+
+/**
+ * 严格解析正整数字段（数量类：count/amount）。存在但不是合法整数、或 < 1 时抛出
+ * IllegalArgumentException，而不是静默回退 1 —— 静默 fallback 会掩盖配置错误并
+ * 改变加载结果。
+ */
+private fun requirePositiveInt(map: Map<String, Any?>, key: String, contextName: String): Int {
+    val raw = map[key] ?: return 1
+    val value = raw.toString().toIntOrNull()
+        ?: throw IllegalArgumentException("$contextName: '$key' must be an integer, got '$raw'")
+    if (value < 1) throw IllegalArgumentException("$contextName: '$key' must be >= 1, got $value")
+    return value
+}
+
+/**
+ * 严格解析 cooking time：存在时必须是非负整数（0 允许，如瞬间烹饪）。
+ */
+private fun requireNonNegativeInt(map: Map<String, Any?>, key: String, contextName: String, default: Int): Int {
+    val raw = map[key] ?: return default
+    val value = raw.toString().toIntOrNull()
+        ?: throw IllegalArgumentException("$contextName: '$key' must be an integer, got '$raw'")
+    if (value < 0) throw IllegalArgumentException("$contextName: '$key' must be >= 0, got $value")
+    return value
+}
+
+/**
+ * 严格解析 experience：存在时必须是 finite 且非负的数字。
+ */
+private fun requireNonNegativeFloat(map: Map<String, Any?>, key: String, contextName: String, default: Float): Float {
+    val raw = map[key] ?: return default
+    val value = raw.toString().toFloatOrNull()
+        ?: throw IllegalArgumentException("$contextName: '$key' must be a number, got '$raw'")
+    if (!value.isFinite()) throw IllegalArgumentException("$contextName: '$key' must be finite, got '$raw'")
+    if (value < 0) throw IllegalArgumentException("$contextName: '$key' must be >= 0, got $value")
+    return value
 }
 
 // ==================== Main parsing function ====================
@@ -230,8 +261,8 @@ private fun parseCooking(
     val resultMap = map.getMap("result") ?: throw IllegalArgumentException("Recipe $id missing result")
     val result = parseRecipeResult(resultMap)
     val ingredient = parseIngredient(map["ingredient"] ?: throw IllegalArgumentException("Cooking recipe $id missing ingredient"))
-    val experience = map.getFloat("experience") ?: 0.1f
-    val cookingTime = map.getInt("cookingTime") ?: map.getInt("time") ?: 200
+    val experience = requireNonNegativeFloat(map, "experience", "Recipe $id", 0.1f)
+    val cookingTime = requireNonNegativeInt(map, "cookingTime", "Recipe $id", requireNonNegativeInt(map, "time", "Recipe $id", 200))
     val group = map.getString("group")
     return RecipeData.Cooking(id, result, inputOptions, type, provider, ingredient, experience, cookingTime, group)
 }
@@ -273,7 +304,7 @@ private fun parseSmithing(
 
 private fun parseRecipeResult(map: Map<String, Any?>): RecipeResult {
     val itemId = map.getString("id") ?: throw IllegalArgumentException("RecipeResult missing id")
-    val count = map.getInt("count") ?: 1
+    val count = requirePositiveInt(map, "count", "RecipeResult")
     val functions = parseFunctions(map.getFlexibleList("function"))
     return RecipeResult(itemId, count, functions)
 }
@@ -313,14 +344,14 @@ private fun parseIngredient(value: Any?): RecipeIngredient {
                 map.containsKey("itemId") -> {
                     RecipeIngredient.Item(
                         map.getString("itemId") ?: error("Ingredient missing itemId"),
-                        map.getInt("amount") ?: 1,
+                        requirePositiveInt(map, "amount", "Ingredient"),
                         map.getBoolean("exact") ?: false
                     )
                 }
                 map.containsKey("tagId") -> {
                     RecipeIngredient.Tag(
                         map.getString("tagId") ?: error("Ingredient missing tagId"),
-                        map.getInt("amount") ?: 1
+                        requirePositiveInt(map, "amount", "Ingredient")
                     )
                 }
                 else -> throw IllegalArgumentException("Ingredient map must contain 'itemId', 'tagId', or 'options'")
@@ -338,11 +369,17 @@ private fun parseIngredientFromString(str: String): RecipeIngredient {
 
     val parts = trimmed.split(INGREDIENT_SPLIT_REGEX)
     val base = parts[0]
-    val amount = if (parts.size > 1) (parts[1].toIntOrNull() ?: 1) else 1
+    val amount = if (parts.size > 1) {
+        val parsed = parts[1].toIntOrNull()
+            ?: throw IllegalArgumentException("Ingredient amount must be an integer, got '${parts[1]}'")
+        if (parsed < 1) throw IllegalArgumentException("Ingredient amount must be >= 1, got $parsed")
+        parsed
+    } else 1
 
     return when {
         base.startsWith("#") || base.startsWith("tag:") -> RecipeIngredient.Tag(base, amount)
-        base.contains(":") -> RecipeIngredient.Item(base, amount)
-        else -> RecipeIngredient.Item("minecraft:$base", amount)
+        // 保留裸名原样：由 resolveRecipeReference 先按原版材质解析、失败再回落 Sertraline，
+        // 这样旧配方里裸写的原版材质与裸写的 Sertraline 物品都能继续工作
+        else -> RecipeIngredient.Item(base, amount)
     }
 }

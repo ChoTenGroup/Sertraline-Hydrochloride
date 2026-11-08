@@ -9,14 +9,22 @@ import org.tabooproject.fluxon.runtime.Environment
 import org.tabooproject.fluxon.runtime.FluxonRuntime
 import org.tabooproject.fluxon.runtime.error.FluxonRuntimeError
 import taboolib.common.platform.function.warning
+import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.TimeUnit
 
 object FluxonShell {
 
-    val scriptCache = Caffeine.newBuilder()
-        .maximumSize(500)
-        .expireAfterAccess(1, TimeUnit.HOURS)
-        .build<String, ParsedScript>()
+    // Lazy AND typed as ConcurrentMap (not Caffeine's Cache): Caffeine is a runtime-injected, relocated
+    // dependency available only at LifeCycle.INIT, while this object's <clinit> allocates the lazy lambda —
+    // loading that lambda class makes the verifier resolve its return type, so a Caffeine-typed property
+    // would throw NoClassDefFoundError at CONST. .asMap() keeps every <clinit> signature Caffeine-free.
+    val scriptCache: ConcurrentMap<String, ParsedScript> by lazy {
+        Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterAccess(1, TimeUnit.HOURS)
+            .build<String, ParsedScript>()
+            .asMap()
+    }
 
     /**
      * Interprets the script but does not execute it
@@ -35,8 +43,8 @@ object FluxonShell {
     fun invoke(script: String, useCache: Boolean = true, env: Environment.() -> Unit = {}): Any? {
         val environment = FluxonRuntime.getInstance().newEnvironment().also(env)
         val parsed = if (useCache) {
-            val cached = scriptCache.getIfPresent(script)
-            if (cached != null) cached else parse(script, environment)?.also { scriptCache.put(script, it) }
+            val cached = scriptCache[script]
+            if (cached != null) cached else parse(script, environment)?.also { scriptCache[script] = it }
         } else {
             parse(script, environment)
         }

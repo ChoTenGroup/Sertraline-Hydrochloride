@@ -1,4 +1,4 @@
-package io.github.zzzyyylllty.sertraline.item.process
+﻿package io.github.zzzyyylllty.sertraline.item.process
 
 import io.github.zzzyyylllty.sertraline.config.asListEnhanced
 import io.github.zzzyyylllty.sertraline.function.data.contextValue

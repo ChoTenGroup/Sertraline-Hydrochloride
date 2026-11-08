@@ -117,18 +117,34 @@ object CustomEventListener {
         "getCurrentItem", "getBow", "getArrow", "getWeapon", "getItemDrop", "getBrokenItem"
     )
 
-    /** Reads custom-events.yml and registers all custom event listeners */
+    /** Reads custom-events.yml and registers all custom event listeners.
+     *
+     * Prepare/commit order: all registrations are parsed first; only then is the old
+     * set unregistered and the new set registered. A parse failure never tears down
+     * the currently active listeners. Individual Bukkit registration failures are
+     * logged and skipped without aborting the rest. */
     fun registerAll() {
-        unregisterAll()
         val root = CustomEventsConfig.config
         val plugin = BukkitPlugin.getInstance()
+
+        // ---- prepare：全部解析，任何一条失败不影响现有注册 ----
+        val parsed = mutableListOf<Registration>()
         for (key in root.getKeys(false)) {
             val sub = root.getConfigurationSection(key) ?: run {
                 severeS("Invalid custom event \"$key\": expected a section.")
                 continue
             }
             try {
-                val reg = parseRegistration(key, sub)
+                parsed += parseRegistration(key, sub)
+            } catch (ex: Exception) {
+                severeS("Failed to parse custom event \"$key\": ${ex.message}")
+            }
+        }
+
+        // ---- commit：注销旧 + 注册新（主线程，dummyListener 整体注销） ----
+        unregisterAll()
+        for (reg in parsed) {
+            try {
                 plugin.server.pluginManager.registerEvent(
                     reg.eventClass,
                     dummyListener,
@@ -138,9 +154,9 @@ object CustomEventListener {
                     reg.ignoreCancelled
                 )
                 registrations += reg
-                devLog("Registered custom event \"$key\" -> ${reg.eventClass.name}")
+                devLog("Registered custom event \"${reg.trigger}\" -> ${reg.eventClass.name}")
             } catch (ex: Exception) {
-                severeS("Failed to register custom event \"$key\": ${ex.message}")
+                severeS("Failed to register custom event \"${reg.trigger}\": ${ex.message}")
             }
         }
         if (registrations.isNotEmpty()) {

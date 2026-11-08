@@ -38,6 +38,17 @@ sertraline:compare-path:
   - sertraline:compare-path
   - sertraline:comparePath
   - sertraline:compare
+sertraline:gem:
+  - sertraline:gem
+sertraline:gem-slots:
+  - sertraline:gem-slots
+  - sertraline:gemSlots
+sertraline:gem-click:
+  - sertraline:gem-click
+  - sertraline:gemClick
+sertraline:gem-click-socket:
+  - sertraline:gem-click-socket
+  - sertraline:gemClickSocket
 xbuilder:name:
   - xbuilder:name
 xbuilder:lore:

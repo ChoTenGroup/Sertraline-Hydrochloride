@@ -99,6 +99,9 @@ allprojects {
         }
         maven("https://repo.skriptlang.org/releases")
         maven("https://repo.destroystokyo.com/repository/maven-public/")
+
+        // FastStats metrics SDK (bStats-like usage tracking)
+        maven("https://repo.faststats.dev/releases")
     }
 
     dependencies {
@@ -164,6 +167,21 @@ allprojects {
             compileOnly(files("$rootDir/libs-public/sparrow-minimessage-0.5.jar"))
         } else {
             taboo(files("$rootDir/libs-public/sparrow-minimessage-0.5.jar"))
+        }
+
+        // FastStats (https://docs.faststats.dev/java) — bStats-like usage/error tracking.
+        // The default artifact is Java 17 bytecode; for legacy12 (Java 8) FastStats publishes an
+        // API-identical backport under the `dev.faststats.metrics.j8` group id (same package names,
+        // major version 52, same NoSuchMethodError guards for Paper/Folia-only calls), so all three
+        // platforms bundle a working SDK.
+        // `config` is a runtime-scope transitive of `bukkit`, declared explicitly so the shading
+        // step always has it (BukkitContext reads plugins/faststats/config.properties through it).
+        if (platform == "legacy12") {
+            taboo(rootProject.libs.faststats.j8.bukkit)
+            taboo(rootProject.libs.faststats.j8.config)
+        } else {
+            taboo(rootProject.libs.faststats.bukkit)
+            taboo(rootProject.libs.faststats.config)
         }
 
 

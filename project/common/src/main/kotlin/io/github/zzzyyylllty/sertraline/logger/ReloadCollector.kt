@@ -5,52 +5,55 @@ import io.github.zzzyyylllty.sertraline.Sertraline.consoleSender
 import org.bukkit.command.CommandSender
 import taboolib.module.lang.asLangText
 
+/**
+ * reload 报告收集入口（兼容保留）。
+ *
+ * 实际数据归属当轮 [ReloadContext]：由 [ReloadCoordinator.tryBegin] 绑定、`end()` 解绑。
+ * 未绑定 context 时调用是 no-op —— 无主日志（如启动期 warning）不应被计入任何一轮报告。
+ */
 object ReloadCollector {
 
-    private val errors = mutableListOf<String>()
-    private val warnings = mutableListOf<String>()
-    private val stats = mutableListOf<String>()
+    @Volatile
+    private var current: ReloadContext? = null
 
-    var isActive: Boolean = false
-        private set
+    fun bind(context: ReloadContext) {
+        current = context
+    }
 
-    fun begin() {
-        errors.clear()
-        warnings.clear()
-        stats.clear()
-        isActive = true
+    fun unbind() {
+        current = null
     }
 
     fun addError(message: String) {
-        if (isActive) errors.add(message)
+        current?.errors?.add(message)
     }
 
     fun addWarning(message: String) {
-        if (isActive) warnings.add(message)
+        current?.warnings?.add(message)
     }
 
     fun addStat(message: String) {
-        if (isActive) stats.add(message)
+        current?.stats?.add(message)
     }
 
-    fun hasErrors() = errors.isNotEmpty()
-    fun hasWarnings() = warnings.isNotEmpty()
+    fun hasErrors() = current?.errors?.isNotEmpty() == true
+    fun hasWarnings() = current?.warnings?.isNotEmpty() == true
 
-    private fun printTo(target: CommandSender) {
+    private fun printTo(context: ReloadContext, target: CommandSender) {
         target.sendStringAsComponent(console.asLangText("Reload_Summary_Header"))
 
-        if (hasErrors()) {
+        if (context.errors.isNotEmpty()) {
             target.sendStringAsComponent(console.asLangText("Reload_Summary_Section_Errors"))
-            errors.forEachIndexed { index, msg ->
+            context.errors.forEachIndexed { index, msg ->
                 target.sendStringAsComponent(
                     console.asLangText("Reload_Summary_Error_Item", index + 1, msg)
                 )
             }
         }
 
-        if (hasWarnings()) {
+        if (context.warnings.isNotEmpty()) {
             target.sendStringAsComponent(console.asLangText("Reload_Summary_Section_Warnings"))
-            warnings.forEachIndexed { index, msg ->
+            context.warnings.forEachIndexed { index, msg ->
                 target.sendStringAsComponent(
                     console.asLangText("Reload_Summary_Warn_Item", index + 1, msg)
                 )
@@ -59,19 +62,25 @@ object ReloadCollector {
 
         target.sendStringAsComponent(console.asLangText("Reload_Summary_Separator"))
 
-        for (stat in stats) {
+        for (stat in context.stats) {
             target.sendStringAsComponent(stat)
         }
 
         target.sendStringAsComponent(console.asLangText("Reload_Summary_Footer"))
     }
 
+    /**
+     * 输出本轮 summary。每轮 context 只打印一次（幂等）；
+     * 未绑定 context 时为 no-op。
+     */
     fun printSummary(sender: CommandSender? = null) {
-        isActive = false
+        val context = current ?: return
+        if (context.summaryPrinted) return
+        context.markSummaryPrinted()
 
         if (sender != null && sender != consoleSender) {
-            printTo(sender)
+            printTo(context, sender)
         }
-        printTo(consoleSender)
+        printTo(context, consoleSender)
     }
 }

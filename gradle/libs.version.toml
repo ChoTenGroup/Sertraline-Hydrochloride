@@ -1,9 +1,10 @@
 
 [versions]
-taboolib = "6.3.0-4bced1a"
+taboolib = "6.3.0-75b18a2"
+#taboolib = "6.3.0-8f586e4"  # 上游缺陷：PrimitiveLoader 要求 reflex 1.2.6，但模块按 reflex 1.2.4 编译，会抛 ClassStructure.getInterfaces() NoSuchMethodError
 #taboolib = "6.3.0-afd75a7"
 #taboolib = "6.2.4-local-dev"
-taboolibPlugin = "2.0.31"
+taboolibPlugin = "2.0.40"
 kotlin = "2.2.0"
 nashorn = "15.4"
 jexl = "3.4.0"
@@ -19,6 +20,12 @@ adventure = "4.25.0"
 #uniItem = "2.3.2"
 datafixerupper = "8.0.16"
 fluxon = "1.5.4"
+# FastStats (bStats-like metrics SDK, https://docs.faststats.dev/java). Java 17+ artifacts.
+faststats = "0.30.1"
+# Java 8 backport of the same SDK (same packages, major version 52). Published from a separate
+# repository (faststats-dev/faststats-java-8) on its own schedule, so keep this in sync with
+# `faststats` whenever the backport for the newer version exists.
+faststatsJ8 = "0.30.1"
 
 # General Purpose Libraries
 netty = "4.1.127.Final"
@@ -44,6 +51,12 @@ placeholderapi = { group = "me.clip", name = "placeholderapi", version.ref = "pl
 packeteventsspigot = { group = "com.github.retrooper", name = "packetevents-spigot", version.ref = "packetEvents" }
 datafixerupper = { group = "com.mojang", name = "datafixerupper", version.ref = "datafixerupper" }
 fluxoncore = { group = "org.tabooproject.fluxon", name = "core", version.ref = "fluxon" }
+# FastStats metrics SDK (Bukkit context; Java 17+ bytecode). `bukkit` pulls `core` transitively.
+faststats-bukkit = { group = "dev.faststats.metrics", name = "bukkit", version.ref = "faststats" }
+faststats-config = { group = "dev.faststats.metrics", name = "config", version.ref = "faststats" }
+# FastStats Java 8 backport (legacy12 platform)
+faststats-j8-bukkit = { group = "dev.faststats.metrics.j8", name = "bukkit", version.ref = "faststatsJ8" }
+faststats-j8-config = { group = "dev.faststats.metrics.j8", name = "config", version.ref = "faststatsJ8" }
 #uniitem-all = { group = "io.github.projectunified", name = "uni-item-all", version.ref = "uniItem" }
 #uniitem-api = { group = "io.github.projectunified", name = "uni-item-api", version.ref = "uniItem" }
 #uniitem-multi = { group = "io.github.projectunified", name = "uni-item-multi", version.ref = "uniItem" }

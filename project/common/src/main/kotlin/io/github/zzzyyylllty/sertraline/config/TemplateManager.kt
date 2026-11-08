@@ -159,13 +159,16 @@ object TemplateManager {
         customDirectiveProviders.remove(name)
     }
 
-    fun loadTemplates() {
-        templates.clear()
+    fun loadTemplates(context: LoadContext? = null) {
         val templateDir = File(getDataFolder(), "templates")
         if (!templateDir.exists()) {
             templateDir.mkdirs()
             releaseResourceFolder("templates")
         }
+
+        // context 模式：解析到局部 candidate，构建完成后由 publishTemplates 整体发布；
+        // 无 context（兼容入口）：直接写 live 表。
+        val sink: MutableMap<String, Map<String, Any?>> = context?.templates ?: templates.also { it.clear() }
 
         var count = 0
         templateDir.walk().filter { it.isFile }.forEach { file ->
@@ -173,7 +176,7 @@ object TemplateManager {
             data.forEach { (key, value) ->
                 if (value is Map<*, *>) {
                     @Suppress("UNCHECKED_CAST")
-                    templates[key] = value as Map<String, Any?>
+                    sink[key] = value as Map<String, Any?>
                     count++
                 }
             }
@@ -181,30 +184,43 @@ object TemplateManager {
     }
 
     /**
+     * 用 candidate 整体替换 live 模板表（reload 构建成功后调用一次）。
+     * 无 candidate 时不做任何事（live 表保持现状，供非 context 路径使用）。
+     */
+    fun publishTemplates(candidate: Map<String, Map<String, Any?>>?) {
+        if (candidate == null) return
+        templates.clear()
+        templates.putAll(candidate)
+    }
+
+    /**
      * 解析整个数据 map 中的 $template 指令。
      * 每个顶层条目自动获得 _ID 参数（值为该条目 key）。
+     *
+     * @param context 当前 reload 的候选构建上下文；非 null 时模板查找优先命中
+     * 本轮候选表（本轮刚加载的新模板对后续 loader 立即可见），未命中回读 live 表。
      */
-    fun resolveInMap(data: Map<String, Any?>): Map<String, Any?> {
+    fun resolveInMap(data: Map<String, Any?>, context: LoadContext? = null): Map<String, Any?> {
         return data.mapValues { (key, value) ->
-            val context = mapOf("_ID" to key)
-            resolveValue(value, context)
+            val ctx = mapOf("_ID" to key)
+            resolveValue(value, ctx, context)
         }
     }
 
     // ==================== 递归解析 ====================
 
     @Suppress("UNCHECKED_CAST")
-    private fun resolveValue(value: Any?, context: Map<String, String>): Any? {
+    private fun resolveValue(value: Any?, context: Map<String, String>, loadCtx: LoadContext? = null): Any? {
         return when (value) {
             is Map<*, *> -> {
                 val map = value as Map<String, Any?>
                 if (map.containsKey("\$template")) {
-                    resolveTemplateDirective(map, context)
+                    resolveTemplateDirective(map, context, loadCtx)
                 } else {
-                    map.mapValues { (_, v) -> resolveValue(v, context) }
+                    map.mapValues { (_, v) -> resolveValue(v, context, loadCtx) }
                 }
             }
-            is List<*> -> value.map { resolveValue(it, context) }
+            is List<*> -> value.map { resolveValue(it, context, loadCtx) }
             else -> value
         }
     }
@@ -230,38 +246,40 @@ object TemplateManager {
     @Suppress("UNCHECKED_CAST")
     private fun resolveTemplateDirective(
         node: Map<String, Any?>,
-        context: Map<String, String>
+        context: Map<String, String>,
+        loadCtx: LoadContext? = null
     ): Map<String, Any?> {
         val directive = node["\$template"]
         if (directive !is Map<*, *>) {
-            return node.mapValues { (_, v) -> resolveValue(v, context) } as Map<String, Any?>
+            return node.mapValues { (_, v) -> resolveValue(v, context, loadCtx) } as Map<String, Any?>
         }
 
         val templateName = directive["use"] as? String
         if (templateName == null) {
             warningL("Config_Load_Error_Parse", "\$template", "missing 'use' field")
-            return node.mapValues { (_, v) -> resolveValue(v, context) } as Map<String, Any?>
+            return node.mapValues { (_, v) -> resolveValue(v, context, loadCtx) } as Map<String, Any?>
         }
 
         // 提取并处理参数（支持 $t/$c 指令）
         val rawArgs = directive["arguments"] as? Map<*, *>
         val (processedArgs, dynamicValues) = processArguments(rawArgs, context)
 
-        val template = templates[templateName]
+        // 候选构建时优先读本轮候选模板，未命中回读 live 表
+        val template = (loadCtx?.templates?.get(templateName) ?: templates[templateName])
         if (template == null) {
             warningL("Config_Load_Error_Parse", "\$template", "template '$templateName' not found")
-            return node.mapValues { (_, v) -> resolveValue(v, context) } as Map<String, Any?>
+            return node.mapValues { (_, v) -> resolveValue(v, context, loadCtx) } as Map<String, Any?>
         }
 
         // 深拷贝模板内容并替换参数（含动态值）
         val substituted = substituteParams(deepClone(template), processedArgs, dynamicValues)
 
         // 递归解析（处理嵌套 $template）
-        val fullyResolved = resolveValue(substituted, processedArgs)
+        val fullyResolved = resolveValue(substituted, processedArgs, loadCtx)
 
         // 合并节点中除 $template 外的其他字段
         val otherKeys = node.filterKeys { it != "\$template" }
-        val resolvedOtherKeys = resolveValue(otherKeys, context)
+        val resolvedOtherKeys = resolveValue(otherKeys, context, loadCtx)
 
         return mergeMaps(fullyResolved as Map<String, Any?>, resolvedOtherKeys as Map<String, Any?>)
     }
@@ -271,6 +289,16 @@ object TemplateManager {
     /**
      * 处理 $template.arguments 中的参数值。
      * 支持普通字符串值，以及带 $t（变换器）和/或 $c（类型转换器）的复杂值。
+     *
+     * 两趟处理：
+     * - 第一趟：按声明顺序求出每个参数的「替换前文本」，同时让后续 $t 的 _ORIGIN / %{} 引用
+     *   能看到前面已声明的参数（与旧行为一致）。这一趟**只传空 dynamicValues**。
+     * - 第二趟：所有参数都收集完之后，再用完整的静态参数 + 动态参数统一替换 %{...}。
+     *   于是占位符可以引用**声明在后面**的参数，也可以引用 $t 产生的动态值
+     *   （如 `name: "Token #%{number}"` 配合 `number: {$t: {type: self_increase}}`）。
+     *
+     * 动态值只在第二趟被消耗：若两趟都传 dynamicValues，同一个 %{number} 会取两次值，
+     * 自增计数器就会跳号。
      *
      * @param rawArgs 原始 arguments map
      * @param baseContext 基础上下文（_ID 等）
@@ -285,12 +313,16 @@ object TemplateManager {
 
         if (rawArgs == null) return Pair(staticArgs, dynamicArgs)
 
+        // 替换前文本，供第二趟重新替换
+        val rawValues = LinkedHashMap<String, String>()
+
         for ((rawKey, rawValue) in rawArgs) {
             val key = rawKey as? String ?: continue
 
             when (rawValue) {
                 is String -> {
                     if (!staticArgs.containsKey(key)) {
+                        rawValues[key] = rawValue
                         staticArgs[key] = substituteParamsInString(rawValue, staticArgs, emptyMap())
                     }
                 }
@@ -301,8 +333,9 @@ object TemplateManager {
                     val hasC = map.containsKey("\$c")
 
                     if ((hasT || hasC) && !staticArgs.containsKey(key)) {
-                        processArgWithTC(key, map, staticArgs, dynamicArgs)
+                        processArgWithTC(key, map, staticArgs, dynamicArgs, rawValues)
                     } else if (!staticArgs.containsKey(key)) {
+                        rawValues[key] = map.toString()
                         staticArgs[key] = substituteParamsInString(map.toString(), staticArgs, emptyMap())
                     }
                 }
@@ -314,19 +347,28 @@ object TemplateManager {
             }
         }
 
+        // 第二趟：用完整参数集重新替换（动态值只在这里被消耗）
+        for ((key, raw) in rawValues) {
+            staticArgs[key] = substituteParamsInString(raw, staticArgs, dynamicArgs)
+        }
+
         return Pair(staticArgs, dynamicArgs)
     }
 
     /**
      * 处理带 $t 和/或 $c 的单个参数值。
+     *
+     * @param rawValues 求出但尚未做 %{} 替换的最终文本，交给 [processArguments] 第二趟统一替换
      */
     private fun processArgWithTC(
         key: String,
         config: Map<String, Any?>,
         currentArgs: MutableMap<String, String>,
-        dynamicArgs: MutableMap<String, () -> String>
+        dynamicArgs: MutableMap<String, () -> String>,
+        rawValues: MutableMap<String, String>
     ) {
         // _ORIGIN 为该参数在当前上下文中已有的值，传入 $t/$c 配置供引用
+        val hadOrigin = currentArgs.containsKey(key)
         val origin = currentArgs[key] ?: ""
         val resolveCtx = currentArgs.toMap() + mapOf("_ORIGIN" to origin)
 
@@ -341,6 +383,10 @@ object TemplateManager {
             dynamic = result.dynamicSupplier
         }
 
+        // 是否存在「源值」：$t 产出了值，或该参数已有继承值。
+        // 只写 $c 而没有源值时两者都不成立（见下面的空值处理）。
+        val hasSource = value != null || hadOrigin
+
         val rawValue = value ?: origin
 
         // Process $c converter (with updated _ORIGIN = value after $t)
@@ -351,7 +397,16 @@ object TemplateManager {
         }
 
         val finalValue = value ?: ""
-        currentArgs[key] = substituteParamsInString(finalValue, currentArgs, emptyMap())
+
+        // 只写了 $c/$t 而没有源值、且转换结果为空时，**不要**注册这个参数。
+        // 否则会用空串顶掉模板里的 %{key?:default} 默认值（旧行为），
+        // 例如 `damage: {$c: {type: int}}` 会把 amount 变成空串、物品直接构建失败。
+        // 交给模板默认值处理才是符合直觉的结果；若 $c 配了 fallback，则结果非空，仍会正常注册。
+        if (hasSource || finalValue.isNotEmpty()) {
+            currentArgs[key] = substituteParamsInString(finalValue, currentArgs, emptyMap())
+            rawValues[key] = finalValue
+        }
+
         if (dynamic != null) {
             dynamicArgs[key] = dynamic
         }
@@ -519,6 +574,22 @@ object TemplateManager {
         val to = (config["to"] as? Number)?.toInt() ?: Int.MAX_VALUE
         val step = (config["step"] as? Number)?.toInt() ?: 1
         val stepInterval = (config["step_interval"] as? Number)?.toInt() ?: 1
+
+        // 加载期校验：step_interval <= 0 会在 next() 的取模处触发 ArithmeticException，
+        // step == 0 或方向与 from/to 相反会让计数器永远不动/溢出 —— 在这里拒绝并报告，
+        // 而不是等运行时炸掉
+        if (stepInterval <= 0) {
+            warningL("Config_Load_Error_Parse", "\$t self_increase", "step_interval must be > 0, got $stepInterval")
+            return TransformResult(from.toString())
+        }
+        if (step == 0 && from != to) {
+            warningL("Config_Load_Error_Parse", "\$t self_increase", "step must not be 0 unless from == to")
+            return TransformResult(from.toString())
+        }
+        if (step != 0 && ((to - from) * step < 0)) {
+            warningL("Config_Load_Error_Parse", "\$t self_increase", "step direction does not match from/to range (from=$from, to=$to, step=$step)")
+            return TransformResult(from.toString())
+        }
 
         val counter = SelfIncreaseCounter(from, to, step, stepInterval)
         return TransformResult(
@@ -777,9 +848,9 @@ object TemplateManager {
 
     // ==================== 参数替换 ====================
 
-    private const val ESCAPE_LEFT = " L "
-    private const val ESCAPE_RIGHT = " R "
-    private const val ESCAPE_DEFAULT = " D "
+    private const val ESCAPE_LEFT = "\u0000L\u0000"
+    private const val ESCAPE_RIGHT = "\u0000R\u0000"
+    private const val ESCAPE_DEFAULT = "\u0000D\u0000"
 
     private val PARAM_PATTERN = Regex("%\\{([^}]*)\\}")
 

@@ -97,7 +97,7 @@ fun mcFeatures(prefix: String): List<String> {
 fun itemModuleMinecraft(e: ItemLoadEvent) {
 
     // minecraft features rely on 1.20.5+ DataComponent; disable this module directly on older versions (1.12.2, etc.)
-    if (!VersionHelper().isOrAbove12005()) return
+    if (!VersionHelper.isOrAbove12005()) return
     ((e.arguments["minecraft"]) as Map<String, Any?>?)?.let {
         for (component in it) {
             e.itemData["minecraft:${component.key.replace("-","_")}"] = component.value
@@ -109,7 +109,7 @@ fun itemModuleMinecraft(e: ItemLoadEvent) {
 fun itemModuleVisual(e: ItemLoadEvent) {
 
     // the visual module's writes rely on DataComponent; disable on older versions (1.12.2, etc.)
-    if (!VersionHelper().isOrAbove12005()) return
+    if (!VersionHelper.isOrAbove12005()) return
     ((e.arguments["visual"]) as Map<String, Any?>?)?.let {
         for (component in it) {
             e.itemData["visual:${component.key.replace("-","_")}"] = component.value

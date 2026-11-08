@@ -1,10 +1,10 @@
-package io.github.zzzyyylllty.sertraline.function.update
+﻿package io.github.zzzyyylllty.sertraline.function.update
 
 import io.github.zzzyyylllty.sertraline.Sertraline
-import io.github.zzzyyylllty.sertraline.Sertraline.config
 import io.github.zzzyyylllty.sertraline.Sertraline.dataFolder
 import io.github.zzzyyylllty.sertraline.Sertraline.itemExpectedRevision
 import io.github.zzzyyylllty.sertraline.Sertraline.itemMap
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.warningL
@@ -25,7 +25,7 @@ private data class RevisionEntry(
  * If the hash changed, increments the revision number and updates itemExpectedRevision.
  */
 fun initRevisionAutoTracker() {
-    if (!config.getBoolean("item-update.auto-track", true)) return
+    if (!SertralineSettings.itemUpdateAutoTrack) return
 
     val revisionDir = getRevisionDir()
     if (!revisionDir.exists()) revisionDir.mkdirs()
@@ -75,8 +75,7 @@ fun initRevisionAutoTracker() {
 }
 
 private fun getRevisionDir(): File {
-    val dirName = config.getString("item-update.auto-track-dir", "revision") ?: "revision"
-    return File(dataFolder, dirName)
+    return File(dataFolder, SertralineSettings.itemUpdateAutoTrackDir)
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -107,10 +106,21 @@ private fun saveTrackerFile(file: File, data: Map<String, RevisionEntry>) {
     }
 }
 
-private fun computeItemHash(sItem: io.github.zzzyyylllty.sertraline.data.ModernSItem): String {
-    val configData = sItem.config
+/**
+ * Hashes the item's own config + data.
+ *
+ * Known scope limit: only the item definition itself is hashed. Content of files the item merely
+ * *references* by id (tier / type / level / lore-format / mapping) is not part of the hash, so
+ * editing such a file does not bump the revision — those changes need a manual
+ * `/sertralinedebug update true` scan. Private items are not tracked here at all (their templates
+ * live per-owner in the database); they only update through an explicit `sertraline:revision-id`.
+ */
+private fun computeItemHash(sItem: io.github.zzzyyylllty.sertraline.data.AbstractSItem): String {
+    // Hash both config AND data so changes on either side trigger revision bumps.
+    // config controls item appearance/behavior; data holds runtime-computed values.
+    val payload = mapOf("config" to sItem.config, "data" to sItem.data)
     val json = try {
-        jsonUtils.toJson(configData)
+        jsonUtils.toJson(payload)
     } catch (e: Exception) {
         sItem.key // fallback to key if serialization fails
     }
@@ -119,8 +129,9 @@ private fun computeItemHash(sItem: io.github.zzzyyylllty.sertraline.data.ModernS
 }
 
 /**
- * Resets the revision tracker (forces every item to be treated as "changed" next time).
- * Used for an admin-triggered full update.
+ * Resets the revision tracker (deletes the tracking file and clears the expected-revision table),
+ * so the next load treats every item as newly tracked. Exposed as `/sertralinedebug resetRevision`;
+ * for an immediate full rebuild use `/sertralinedebug update true` instead.
  */
 fun resetRevisionAutoTracker() {
     val revisionDir = getRevisionDir()

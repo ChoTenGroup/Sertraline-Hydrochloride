@@ -129,7 +129,12 @@ object PlatformCompat {
         return meta
     }
 
-    fun getDisplayName(item: ItemStack): Component = item.displayName()
+    // ItemStack.displayName() internally serializes the whole stack (including a show_item hover event)
+    // and vanilla codecs reject stack counts outside [1;99] with "Value must be within range [1;99]: 100".
+    // Clamp the amount on a copy so oversized stacks (e.g. amount 100) don't blow up component encoding.
+    fun getDisplayName(item: ItemStack): Component =
+        if (item.amount in 1..99) item.displayName()
+        else item.clone().apply { amount = amount.coerceIn(1, 99) }.displayName()
 
     // effectiveName() is a new Paper API ("name shown to player in inventory", with 1.21.4+ ITEM_NAME preferred and
     // rendered without [], whereas displayName/CUSTOM_NAME render with a white []); not present in the

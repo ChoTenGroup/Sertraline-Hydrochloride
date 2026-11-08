@@ -1,4 +1,4 @@
-package io.github.zzzyyylllty.sertraline.attribute
+﻿package io.github.zzzyyylllty.sertraline.attribute
 
 import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import io.github.zzzyyylllty.sertraline.util.dependencies.MMOUtil.mmoAttributeCalculate

@@ -25,7 +25,10 @@ import taboolib.library.configuration.ConfigurationSection
 import taboolib.module.configuration.Configuration
 import taboolib.platform.BukkitPlugin
 import java.io.File
+import com.github.benmanes.caffeine.cache.Caffeine
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Global listener system
@@ -39,7 +42,9 @@ import java.util.concurrent.ConcurrentHashMap
  *   bind: "PlayerToggleSneakEvent"   # event class, short alias or fully qualified name
  *   priority: NORMAL                 # optional: LOWEST/LOW/NORMAL/HIGH/HIGHEST/MONITOR
  *   accept-cancelled: false          # optional: whether to handle cancelled events (default false)
- *   async: true                      # optional: whether to run the script asynchronously (default true)
+ *   async: false                     # optional: run the script off the main thread (default false)
+ *                                    #   scripts receive `event`/`cancellableEvent` and the Bukkit API, so
+ *                                    #   asynchronous execution is only safe for pure computation.
  *   throttle: 500                    # optional: minimum trigger interval in ms; 0/absent = no rate limiting
  *   condition:                       # optional: Kether condition, skipped when false
  *     - "..."
@@ -75,13 +80,26 @@ object GlobalListenerManager {
 
     private val registrations = mutableListOf<GlobalListener>()
 
-    /** throttle key -> last release timestamp (ms); Bukkit events fire on the main thread, a concurrent container guards against possible future async registration */
-    private val lastFire = ConcurrentHashMap<String, Long>()
+    /**
+     * throttle key -> last release timestamp (ms); Caffeine-backed with 1-hour expiry to prevent unbounded growth.
+     * Typed as ConcurrentMap (not Caffeine's Cache): this object's <clinit> allocates the lazy lambda, and loading
+     * that lambda class makes the verifier resolve its return type — a Caffeine-typed property would therefore
+     * throw NoClassDefFoundError at LifeCycle.CONST, before Caffeine is injected at LifeCycle.INIT.
+     */
+    private val lastFire: ConcurrentMap<String, Long> by lazy {
+        Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterAccess(1, TimeUnit.HOURS)
+            .build<String, Long>()
+            .asMap()
+    }
 
-    /** Loads and registers all listeners under the global-listeners/ directory */
+    /** Loads and registers all listeners under the global-listeners/ directory.
+     *
+     * Prepare/commit order: all listeners are parsed first; only then is the old set
+     * unregistered and the new set registered. A parse failure never tears down the
+     * currently active listeners. */
     fun registerAll() {
-        unregisterAll()
-        lastFire.clear()
         val dir = File(getDataFolder(), "global-listeners")
         if (!dir.exists()) {
             infoS("Global listeners directory not found, releasing default...")
@@ -96,14 +114,47 @@ object GlobalListenerManager {
             return
         }
 
+        // ---- prepare：全部解析，任何一条失败不影响现有注册 ----
         val plugin = BukkitPlugin.getInstance()
-        var count = 0
+        val parsed = mutableListOf<GlobalListener>()
         dir.walk()
             .filter { it.isFile && it.extension in setOf("yml", "yaml") }
             .forEach { file ->
-                count += loadFile(file, plugin)
+                try {
+                    val config = Configuration.loadFromFile(file)
+                    for (key in config.getKeys(false)) {
+                        val section = config.getConfigurationSection(key) ?: continue
+                        try {
+                            parsed += parseListener(key, section, file.name)
+                        } catch (ex: Exception) {
+                            severeS("Failed to parse global listener \"$key\" (${file.name}): ${ex.message}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    severeS("Failed to load global listener file: ${file.name} - ${e.message}")
+                }
             }
-        infoS("Loaded $count global listener(s) from ${dir.absolutePath}")
+
+        // ---- commit：注销旧 + 注册新（主线程，dummyListener 整体注销） ----
+        unregisterAll()
+        lastFire.clear()
+        for (listener in parsed) {
+            try {
+                plugin.server.pluginManager.registerEvent(
+                    listener.eventClass,
+                    dummyListener,
+                    listener.priority,
+                    EventExecutor { _, event -> onEvent(listener, event) },
+                    plugin,
+                    listener.ignoreCancelled
+                )
+                registrations += listener
+                devLog("Registered global listener \"${listener.name}\" -> ${listener.eventClass.name} (${listener.source})")
+            } catch (ex: Exception) {
+                severeS("Failed to register global listener \"${listener.name}\": ${ex.message}")
+            }
+        }
+        infoS("Loaded ${registrations.size} global listener(s) from ${dir.absolutePath}")
         devLog("Global listeners: ${registrations.map { it.name }}")
     }
 
@@ -115,35 +166,6 @@ object GlobalListenerManager {
         } catch (_: Throwable) {
         }
         registrations.clear()
-    }
-
-    private fun loadFile(file: File, plugin: BukkitPlugin): Int {
-        var count = 0
-        try {
-            val config = Configuration.loadFromFile(file)
-            for (key in config.getKeys(false)) {
-                val section = config.getConfigurationSection(key) ?: continue
-                try {
-                    val listener = parseListener(key, section, file.name)
-                    plugin.server.pluginManager.registerEvent(
-                        listener.eventClass,
-                        dummyListener,
-                        listener.priority,
-                        EventExecutor { _, event -> onEvent(listener, event) },
-                        plugin,
-                        listener.ignoreCancelled
-                    )
-                    registrations += listener
-                    devLog("Registered global listener \"$key\" -> ${listener.eventClass.name} (${file.name})")
-                    count++
-                } catch (ex: Exception) {
-                    severeS("Failed to register global listener \"$key\" (${file.name}): ${ex.message}")
-                }
-            }
-        } catch (e: Exception) {
-            severeS("Failed to load global listener file: ${file.name} - ${e.message}")
-        }
-        return count
     }
 
     private fun parseListener(key: String, section: ConfigurationSection, file: String): GlobalListener {
@@ -160,7 +182,11 @@ object GlobalListenerManager {
             EventPriority.values().firstOrNull { it.name.equals(name, true) }
         } ?: EventPriority.NORMAL
         val acceptCancelled = section.getBoolean("accept-cancelled", false)
-        val async = section.getBoolean("async", true)
+        // `async` defaults to FALSE: the scripts get `event`, `cancellableEvent` and the Bukkit API in
+// `defaultData`, so running them off-thread was a thread-safety violation by default (and events
+// that are only valid on the main thread, e.g. anything reading an inventory, could throw).
+// Listeners that genuinely do pure computation can opt in with `async: true`.
+        val async = section.getBoolean("async", false)
         val throttle = section.getLong("throttle", 0)
         val condition = parseCondition(section.get("condition"))
         val scripts = parseScripts(key, section.getConfigurationSection("eval"), file)

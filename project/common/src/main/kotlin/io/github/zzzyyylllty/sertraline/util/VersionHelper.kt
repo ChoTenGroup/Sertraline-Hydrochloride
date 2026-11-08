@@ -4,7 +4,7 @@ import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import taboolib.module.nms.MinecraftVersion
 import taboolib.module.nms.MinecraftVersion.versionId
 
-class VersionHelper {
+object VersionHelper {
     fun getVer(): Int {
         return versionId
     }

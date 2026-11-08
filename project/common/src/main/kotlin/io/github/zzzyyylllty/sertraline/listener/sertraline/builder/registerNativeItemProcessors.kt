@@ -38,7 +38,7 @@ fun registerNativeAdapter() {
         devLog("Adapting MMO")
         mmoAdapter(item, sItem, player)
     }
-    if (VersionHelper().isOrAbove12005()) itemManager.registerProcessor("minecraft") { sItem, item, player ->
+    if (VersionHelper.isOrAbove12005()) itemManager.registerProcessor("minecraft") { sItem, item, player ->
         devLog("Adapting minecraft")
         minecraftAdapter(item, sItem, player)
     } else {
@@ -49,5 +49,8 @@ fun registerNativeAdapter() {
         devLog("Adapting common")
         commonAdapter(item, sItem, player)
     }
+
+    // 外部插件注册的段落必须在每次重载后重新挂载，否则 /sreload 之后它们会静默失效。
+    ExternalItemProcessors.applyExternalProcessors()
 
 }

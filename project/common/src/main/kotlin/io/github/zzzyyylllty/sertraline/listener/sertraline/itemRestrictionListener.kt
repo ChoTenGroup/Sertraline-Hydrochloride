@@ -1,6 +1,6 @@
 package io.github.zzzyyylllty.sertraline.listener.sertraline
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.Sertraline.itemMap
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
@@ -71,7 +71,7 @@ private fun shouldBlock(mode: RestrictMode, isVanilla: Boolean): Boolean {
 
 // internal: also used by the handlers in itemSmithingRestriction.kt / itemTradeRestriction.kt
 internal fun sendBlockMessage(player: Player, key: String) {
-    val msg = config.getString("messages.common.$key", "")
+    val msg = SertralineSettings.rawString("messages.common.$key", "")
     if (!msg.isNullOrEmpty()) {
         PlatformCompat.sendComponent(player, MiniMessage.miniMessage().deserialize(msg))
     }

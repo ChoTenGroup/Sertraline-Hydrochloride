@@ -1,8 +1,8 @@
 package io.github.zzzyyylllty.sertraline.gui
 
-import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.Sertraline.craftingStations
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.data.*
 import io.github.zzzyyylllty.sertraline.function.kether.evalKetherBoolean
 import io.github.zzzyyylllty.sertraline.function.kether.evalKether
@@ -38,6 +38,11 @@ object CraftingStationManager {
 
     /** Unique session token generator */
     private val nextSessionToken = AtomicLong(0)
+
+    /** Cached JSR 223 JavaScript engine (lazily initialized, avoids repeated getEngineByName overhead) */
+    private val jsEngine: javax.script.ScriptEngine? by lazy {
+        ScriptHelper.engineManager.getEngineByName("js")
+    }
 
     /**
      * Opens the crafting station GUI.
@@ -125,6 +130,14 @@ object CraftingStationManager {
 
             // Render the layout
             map(*display.layout.toTypedArray())
+
+            // Lock EVERY slot of this menu before binding the interactive ones.
+            // Only slots passed to `set(...) { }` were cancelled, so any layout slot without a bound
+            // element (and the empty recipe slots on the last page) accepted drags / shift-clicks
+            // from the player's inventory: the items went into the station GUI and were destroyed
+            // when it closed. ClickEvent cancellation does not stop other callbacks, so this does not
+            // interfere with the per-slot handlers below.
+            onClick(lock = true) { }
 
             // Render background elements
             for ((elementId, elementConfig) in display.elements) {
@@ -259,7 +272,7 @@ object CraftingStationManager {
         // Check whether a crafting process is already active
         val existing = activeSessions[sessionKey]
         if (existing != null) {
-            val msg = Sertraline.config.getString("messages.crafting-already-active", "<yellow>You already have an active crafting process!</yellow>") ?: "<yellow>You already have an active crafting process!</yellow>"
+            val msg = SertralineSettings.msgCraftingAlreadyActive
             PlatformCompat.sendComponent(player, msg.toComponent())
             return
         }
@@ -276,7 +289,7 @@ object CraftingStationManager {
                         msgs["ConditionNotMet${fail.condition.type}"]
                             ?: msgs["ConditionNotMet${conditionType.replaceFirstChar { it.uppercase() }}"]
                             ?: msgs["ConditionNotMet${conditionType}"]
-                    } ?: Sertraline.config.getString("messages.condition-not-met")
+                    } ?: SertralineSettings.msgConditionNotMet
                         ?: "<red>Condition not met: {condition_name}</red>"
                     PlatformCompat.sendComponent(player, message
                         .replace("{condition_name}", fail.condition.name)
@@ -310,7 +323,7 @@ object CraftingStationManager {
         val consumed = tryConsumeInputs(player, recipe)
         if (consumed == null) {
             val missingName = recipe.inputs.firstOrNull()?.displayName?.ifEmpty { recipe.inputs.firstOrNull()?.input?.item } ?: "unknown"
-            val msg = Sertraline.config.getString("messages.missing-ingredients", "<red>Missing ingredients: {display_name}</red>") ?: "<red>Missing ingredients: {display_name}</red>"
+            val msg = SertralineSettings.msgMissingIngredients
             PlatformCompat.sendComponent(player, msg.replace("{display_name}", missingName).toComponent())
             return
         }
@@ -344,6 +357,13 @@ object CraftingStationManager {
 
             // Grant output items (must run on the main thread)
             submit(async = false) {
+                // The player may have disconnected during the crafting delay. Without this check the
+                // outputs, the completion message and the lifecycle agents all ran against an
+                // offline Player — items vanished and `onClaim` scripts ran on a stale entity.
+                if (!player.isOnline) {
+                    CraftingStationDataManager.clearSession(player)
+                    return@submit
+                }
                 try {
                     for (output in recipe.outputs) {
                         val outputStack = output.build(player)
@@ -353,7 +373,7 @@ object CraftingStationManager {
                     fireRecipeAgents(recipe, "onClaim", player)
                     fireStationAgents(station, recipe, "onClaim", player)
 
-                    val msg = Sertraline.config.getString("messages.crafting-complete", "<green>Crafting complete!</green>") ?: "<green>Crafting complete!</green>"
+                    val msg = SertralineSettings.msgCraftingComplete
                     PlatformCompat.sendComponent(player, msg.toComponent())
                 } finally {
                     CraftingStationDataManager.clearSession(player)
@@ -383,7 +403,7 @@ object CraftingStationManager {
             consumedItems = consumed.map { it.item }
         )
 
-        val msg = Sertraline.config.getString("messages.crafting-started", "<yellow>Crafting started... ({time} s)</yellow>") ?: "<yellow>Crafting started... ({time} s)</yellow>"
+        val msg = SertralineSettings.msgCraftingStarted
         PlatformCompat.sendComponent(player, msg.replace("{time}", "%.1f".format(timeSeconds)).toComponent())
     }
 
@@ -398,7 +418,7 @@ object CraftingStationManager {
                     "scaled" -> {
                         val amount = condition.amount.evalKetherString(player)
                         val required = condition.required.evalKetherString(player)
-                        amount?.toDoubleOrNull() ?: 0.0 >= required?.toDoubleOrNull() ?: 0.0
+                        (amount?.toDoubleOrNull() ?: 0.0) >= (required?.toDoubleOrNull() ?: 0.0)
                     }
                     "boolean", "kether" -> {
                         condition.condition.evalKetherBoolean(player)
@@ -547,7 +567,7 @@ object CraftingStationManager {
                     trimmed.startsWith("js:") || trimmed.startsWith("javascript:") -> {
                         val jsVars = defaultData + vars + mapOf("player" to player, "bukkitPlayer" to player)
                         val jsScript = trimmed.substringAfter(":").trimStart()
-                        val engine = ScriptHelper.engineManager.getEngineByName("js")
+                        val engine = jsEngine
                         if (engine != null) {
                             val bindings = engine.createBindings()
                             jsVars.forEach { (k, v) -> bindings[k] = v }
@@ -588,8 +608,17 @@ object CraftingStationManager {
 
     /** Cancel all online crafting sessions and return items (used on reload) */
     fun cancelAll() {
+        // NOT necessarily on the main thread: reload runs its publish phase inside an async
+        // `runReload`, so this method may be called off-thread. `activeSessions` is a
+        // ConcurrentHashMap, so snapshot+clear is safe from any thread, and the world/DB work below
+        // is explicitly hopped to the main thread via callSyncMethod. (The previous comment claimed
+        // this method already ran on the main thread, which was wrong — and it made the `if
+        // (isPrimaryThread())` branch below look like dead code.)
+        val snapshot = HashMap(activeSessions)
+        activeSessions.clear()
+
         val onlinePlayers = mutableMapOf<String, CraftingSession>()
-        activeSessions.values.forEach { session ->
+        for ((_, session) in snapshot) {
             session.cancel()
             val player = org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(session.playerId))
             if (player != null) {
@@ -597,7 +626,6 @@ object CraftingStationManager {
             }
             // Offline players: keep the DB data; restoreSession handles it on join
         }
-        activeSessions.clear()
 
         if (onlinePlayers.isEmpty()) return
 
@@ -605,7 +633,7 @@ object CraftingStationManager {
         try {
             val plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Sertraline")
             if (plugin != null) {
-                org.bukkit.Bukkit.getScheduler().callSyncMethod(plugin, java.util.concurrent.Callable {
+                val returnItems = java.util.concurrent.Callable {
                     for ((playerId, session) in onlinePlayers) {
                         val player = org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(playerId))
                         if (player != null) {
@@ -614,7 +642,12 @@ object CraftingStationManager {
                         }
                     }
                     null
-                }).get()
+                }
+                if (org.bukkit.Bukkit.isPrimaryThread()) {
+                    returnItems.call()
+                } else {
+                    org.bukkit.Bukkit.getScheduler().callSyncMethod(plugin, returnItems).get()
+                }
             }
         } catch (e: Exception) {
             severeS("Failed to synchronously cancel crafting sessions: ${e.message}")
@@ -623,8 +656,9 @@ object CraftingStationManager {
 
     /** Shut down all crafting tasks without clearing persisted data (used on server shutdown) */
     fun shutdownAll() {
-        activeSessions.values.forEach { it.cancel() }
+        val snapshot = HashMap(activeSessions)
         activeSessions.clear()
+        snapshot.values.forEach { it.cancel() }
     }
 
     /** Cancel a specific player's crafting session (called when the player disconnects) */

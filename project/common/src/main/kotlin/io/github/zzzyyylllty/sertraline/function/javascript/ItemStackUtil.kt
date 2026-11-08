@@ -120,4 +120,46 @@ object ItemStackUtil {
     fun isSelf(a: ItemStack, b: ItemStack): Boolean {
         return a == b
     }
+
+    // -- vars (sertraline_data) helpers --
+    // Vars are persisted to the item's NBT under the "sertraline_data" compound; keys use
+    // "." for nesting, e.g. "count" -> sertraline_data.count, "foo.bar" -> sertraline_data.foo.bar.
+
+    /** Reads a var by a "."-separated key, returning null if it does not exist. */
+    fun getVar(itemStack: ItemStack, key: String): Any? {
+        return itemStack.getItemTag().getDeep("sertraline_data.$key")?.unsafeData()
+    }
+
+    /** Checks whether a var exists at the key. */
+    fun hasVar(itemStack: ItemStack, key: String): Boolean {
+        return itemStack.getItemTag().getDeep("sertraline_data.$key") != null
+    }
+
+    /** Writes a var, returning a new item (does not change the original; null removes the key). */
+    fun setVar(itemStack: ItemStack, key: String, value: Any?): ItemStack {
+        val tag = itemStack.getItemTag()
+        tag["sertraline_data.$key"] = value
+        return itemStack.setItemTag(tag)
+    }
+
+    /** Writes a var, directly changing the original item (null removes the key). */
+    fun setVarDirect(itemStack: ItemStack, key: String, value: Any?): ItemStack {
+        val tag = itemStack.getItemTag()
+        tag["sertraline_data.$key"] = value
+        return tag.saveTo(itemStack)
+    }
+
+    /** Removes a var, returning a new item (does not change the original). */
+    fun removeVar(itemStack: ItemStack, key: String): ItemStack {
+        val tag = itemStack.getItemTag()
+        tag.removeDeep("sertraline_data.$key")
+        return itemStack.setItemTag(tag)
+    }
+
+    /** Removes a var, directly changing the original item. */
+    fun removeVarDirect(itemStack: ItemStack, key: String): ItemStack {
+        val tag = itemStack.getItemTag()
+        tag.removeDeep("sertraline_data.$key")
+        return tag.saveTo(itemStack)
+    }
 }

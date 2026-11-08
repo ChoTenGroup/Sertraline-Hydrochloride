@@ -1,13 +1,13 @@
 package io.github.zzzyyylllty.sertraline.item.adapter
 
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import taboolib.module.nms.getItemTag
 import taboolib.module.nms.setItemTag
 
-fun customDataAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemStack {
+fun customDataAdapter(item: ItemStack, sItem: AbstractSItem, player: Player?): ItemStack {
     val map = (sItem.getDeepData("custom_data") as? Map<String, Any?>)
     if (map == null || map.isEmpty()) {
         devLog("custom_data is null or empty, skipping adapting.")
@@ -24,7 +24,7 @@ fun customDataAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): Ite
     return item.setItemTag(tag, true)
 }
 
-fun chotenDataAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemStack {
+fun chotenDataAdapter(item: ItemStack, sItem: AbstractSItem, player: Player?): ItemStack {
     val rawData = sItem.getDeepData("chotenatb") as? Map<String, Any?> ?: run {
         devLog("chotenatb data is null or not a map, skipping adapting.")
         return item

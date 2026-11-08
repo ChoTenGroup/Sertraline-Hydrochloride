@@ -1,0 +1,96 @@
+﻿
+> Task :plugin:tasks
+
+------------------------------------------------------------
+Tasks runnable from project ':plugin'
+------------------------------------------------------------
+
+Build tasks
+-----------
+assemble - Assembles the outputs of this project.
+build - Assembles and tests this project.
+buildAll - Build all platform jars (Paper + Spigot + Legacy)
+buildDependents - Assembles and tests this project and all projects that depend on it.
+buildKotlinToolingMetadata - Build metadata json file containing information about the used Kotlin tooling
+buildLegacy - Build Legacy platform jar (Sertraline-*-Legacy.jar, MC 1.12.2 / Java 8)
+buildNeeded - Assembles and tests this project and all projects it depends on.
+buildSpigot - Build Spigot platform jar (Sertraline-*-Spigot.jar)
+classes - Assembles main classes.
+clean - Deletes the build directory.
+freeJar - Generate FREE version jar by filtering premium classes
+jar - Assembles a jar archive containing the classes of the 'main' feature.
+kotlinSourcesJar - Assembles a jar archive containing the sources of target 'kotlin'.
+testClasses - Assembles test classes.
+
+Documentation tasks
+-------------------
+javadoc - Generates Javadoc API documentation for the 'main' feature.
+
+Help tasks
+----------
+buildEnvironment - Displays all buildscript dependencies declared in project ':plugin'.
+dependencies - Displays all dependencies declared in project ':plugin'.
+dependencyInsight - Displays the insight into a specific dependency in project ':plugin'.
+help - Displays a help message.
+javaToolchains - Displays the detected java toolchains.
+kotlinDslAccessorsReport - Prints the Kotlin code for accessing the currently available project extensions and conventions.
+outgoingVariants - Displays the outgoing variants of project ':plugin'.
+projects - Displays the sub-projects of project ':plugin'.
+properties - Displays the properties of project ':plugin'.
+resolvableConfigurations - Displays the configurations that can be resolved in project ':plugin'.
+tasks - Displays the tasks runnable from project ':plugin'.
+
+Publishing tasks
+----------------
+dropMavenCentralDeployment - Drops the deployment with the supplied id
+generateMetadataFileForMavenPublication - Generates the Gradle metadata file for publication 'maven'.
+generatePomFileForMavenPublication - Generates the Maven POM file for publication 'maven'.
+publish - Publishes all publications produced by this project.
+publishAllPublicationsToMavenCentralRepository - Publishes all Maven publications produced by this project to the mavenCentral repository.
+publishAndReleaseToMavenCentral - Publishes to Maven Central and automatically triggers release
+publishMavenPublicationToMavenCentralRepository - Publishes Maven publication 'maven' to Maven repository 'mavenCentral'.
+publishMavenPublicationToMavenLocal - Publishes Maven publication 'maven' to the local Maven repository.
+publishToMavenCentral - Publishes to Maven Central
+publishToMavenLocal - Publishes all Maven publications produced by this project to the local Maven cache.
+
+Taboolib tasks
+--------------
+taboolibBuildApi
+taboolibMainTask
+taboolibRefreshDependencies
+
+Verification tasks
+------------------
+check - Runs all checks.
+checkKotlinGradlePluginConfigurationErrors - Checks that Kotlin Gradle Plugin hasn't reported project configuration errors, failing otherwise. This task always runs before compileKotlin* or similar tasks.
+test - Runs the test suite.
+
+Other tasks
+-----------
+checkLegacyAbi
+compileJava - Compiles main Java source.
+compileKotlin - Compiles the compilation 'main' in target ''.
+compileTestJava - Compiles test Java source.
+compileTestKotlin - Compiles the compilation 'test' in target ''.
+components - Displays the components produced by project ':plugin'. [deprecated]
+dependentComponents - Displays the dependent components of components in project ':plugin'. [deprecated]
+dumpLegacyAbi
+enableAutomaticMavenCentralPublishing - Enables automatic publishing for Maven Central
+javadocJar
+mainClasses
+model - Displays the configuration model of project ':plugin'. [deprecated]
+plainJavadocJar
+prepareMavenCentralPublishing - Prepare for publishing to Maven Central
+processResources - Processes main resources.
+processTestResources - Processes test resources.
+signMavenPublication - Signs all artifacts in the 'maven' publication.
+sourcesJar
+updateLegacyAbi
+
+Rules
+-----
+Pattern: clean<TaskName>: Cleans the output files of a task.
+Pattern: build<ConfigurationName>: Assembles the artifacts of a configuration.
+
+BUILD SUCCESSFUL in 9s
+1 actionable task: 1 executed

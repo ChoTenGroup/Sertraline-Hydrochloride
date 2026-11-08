@@ -1,0 +1,6 @@
+name: SertralineProbe
+version: 1.0.0
+main: sertralineprobe.ProbePlugin
+api-version: '1.21'
+author: test
+description: Throwaway probe for SertralineItemAPI

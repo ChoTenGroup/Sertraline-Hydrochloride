@@ -105,12 +105,10 @@ object GraalJsUtil {
         val ctx = newGraalContext()
         try {
             for ((_, source) in gjsScriptCache) {
-                if (source != null) {
-                    try {
-                        ctx.eval(source)
-                    } catch (_: Exception) {
-                        // expected per-source warm-up failure, continue with the next
-                    }
+                try {
+                    ctx.eval(source)
+                } catch (_: Exception) {
+                    // expected per-source warm-up failure, continue with the next
                 }
             }
         } finally {
@@ -125,7 +123,8 @@ object GraalJsUtil {
 //            .allowHostAccess(hostAccess)
             .engine(globalGJSEngine)
             .allowHostAccess(hostAccess ?: HostAccess.ALL) // use fine-grained config
-            .allowHostClassLookup { name -> name.startsWith("io.github.zzzyyylllty.sertraline") } // only allow access to the plugin's own classes
+            .allowHostClassLookup { name -> name.startsWith("io.github.zzzyyylllty.sertraline") } // only allow lookup of plugin classes; System/Bukkit/Runtime cannot be discovered by name
+            .allowHostClassLoading(false) // prevent scripts from loading arbitrary classes via Class.forName
             .build()
         liveContexts.add(context)
         return context
@@ -135,16 +134,20 @@ object GraalJsUtil {
     fun directEval(script: String, vars: Map<String, Any?>): Any? {
         // legacy12 (Java 8): GraalJS is not bundled and its runtime download description is excluded,
         // lower versions map to the JDK's built-in Nashorn (JSR 223), avoiding NoClassDefFoundError
-        if (VersionHelper().isLegacy()) return evalNashorn(script, vars)
+        if (VersionHelper.isLegacy()) return evalNashorn(script, vars)
         return executeScriptString(script, vars)
 
     }
     fun cachedEval(script: String, vars: Map<String, Any?>): Any? {
-        if (VersionHelper().isLegacy()) return evalNashorn(script, vars)
+        if (VersionHelper.isLegacy()) return evalNashorn(script, vars)
 
         val hash = script.generateHash()
-        val source = gjsScriptCache.getOrPut(hash) {
-            compile(script)
+        var source = gjsScriptCache[hash]
+        if (source == null) {
+            source = compile(script)
+            if (source != null) {
+                gjsScriptCache.put(hash, source)
+            }
         }
 
         if (source == null) {
@@ -159,10 +162,10 @@ object GraalJsUtil {
 
     /**
      * Returns the execution result as a JS-semantics string (equivalent to GraalJS's Value.toString),
-     * used to preserve the old evalGraalJs output format (e.g. integer 2 → "2" rather than "2.0").
+     * used to preserve the old evalGraalJs output format (e.g. integer 2 �?"2" rather than "2.0").
      */
     fun evalToJsString(script: String, vars: Map<String, Any?>): Any? {
-        if (VersionHelper().isLegacy()) return evalNashorn(script, vars)
+        if (VersionHelper.isLegacy()) return evalNashorn(script, vars)
         val (context, bindings) = prepareContext(vars)
         val result: Value = context.eval(GJS_LANG_ID, script)
         return result?.toString() ?: result

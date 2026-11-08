@@ -19,5 +19,6 @@ fun itemModuleCommon(e: ItemLoadEvent) {
         "$prefix:disable-village-trade"
     )
 
-    e.itemData.putAll(ConfigUtil.getFeatures(e.itemKey, e.arguments, features, e.itemData))
+    // Pass the reload candidate context so the first load does not read the (still empty) live mapping table.
+    e.itemData.putAll(ConfigUtil.getFeatures(e.itemKey, e.arguments, features, e.itemData, e.context))
 }

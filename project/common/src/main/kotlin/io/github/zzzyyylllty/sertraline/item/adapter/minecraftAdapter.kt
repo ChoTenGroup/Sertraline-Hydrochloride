@@ -1,6 +1,6 @@
 package io.github.zzzyyylllty.sertraline.item.adapter
 
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.impl.removeComponentNMS
 import io.github.zzzyyylllty.sertraline.impl.setComponentNMS
@@ -14,12 +14,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private val warnedMinecraftComponent = AtomicBoolean(false)
 
-fun minecraftAdapter(item: ItemStack,sItem: ModernSItem,player: Player?): ItemStack {
+fun minecraftAdapter(item: ItemStack,sItem: AbstractSItem,player: Player?): ItemStack {
     val item = item
     val map = (sItem.getMajorData("minecraft") as? Map<String, Any?>) ?: return item
     if (map.isEmpty()) return item
     // DataComponent is a 1.20.5+ feature; older versions (1.12.2, etc.) cannot write components, so skip entirely
-    if (!VersionHelper().isOrAbove12005()) {
+    if (!VersionHelper.isOrAbove12005()) {
         if (warnedMinecraftComponent.compareAndSet(false, true)) {
             warningL("WarningNotSupportDataComponent")
         }

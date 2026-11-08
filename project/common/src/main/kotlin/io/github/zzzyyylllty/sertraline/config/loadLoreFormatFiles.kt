@@ -1,7 +1,8 @@
 package io.github.zzzyyylllty.sertraline.config
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.Sertraline.loreFormats
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.data.AbstractLoreElement
 import io.github.zzzyyylllty.sertraline.data.AbstractLoreFormat
 import io.github.zzzyyylllty.sertraline.data.CommonLoreElement
@@ -31,9 +32,12 @@ import io.github.zzzyyylllty.sertraline.data.ScriptCompareGroup
 import io.github.zzzyyylllty.sertraline.data.SwitchFork
 import io.github.zzzyyylllty.sertraline.data.SwitchableLoreFormat
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
+import io.github.zzzyyylllty.sertraline.event.SertralineLoreFormatFileLoadPostEvent
+import io.github.zzzyyylllty.sertraline.event.SertralineLoreFormatFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.severeL
 import io.github.zzzyyylllty.sertraline.logger.warningL
+import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
 import taboolib.common.platform.function.getDataFolder
 import taboolib.common.platform.function.releaseResourceFolder
@@ -41,43 +45,54 @@ import taboolib.common5.compileJS
 import java.io.File
 import javax.script.CompiledScript
 
+private val packetLoreLF: Boolean get() = SertralineSettings.packetLore && DependencyHelper.pe
 
-fun loadLoreFormatFiles() {
+/**
+ * loreFormats 写入目标：context 模式写 candidate map；无 context（兼容入口）写 live 表。
+ * switchable 解析期间的 containsKey/读 也必须走同一张表（先解析 normal 再解析 switchable）。
+ */
+private fun loreFormatSink(context: LoadContext?): MutableMap<String, AbstractLoreFormat> =
+    context?.loreFormats ?: Sertraline.loreFormats
+
+fun loadLoreFormatFiles(context: LoadContext? = null) {
     infoL("LoreFormat_Load")
-    if (!File(getDataFolder(), "lore-formats").exists()) {
-        warningL("LoreFormat_Load_Regen")
-        releaseResourceFolder("lore-formats")
-    }
-    val files = File(getDataFolder(), "lore-formats").listFiles() ?: run {
-        warningL("LoreFormat_Load_No_Files")
-        return
-    }
-    val regex = (config["file-load.lore-format"] ?: ".*").toString()
-    val allSwitchable = LinkedHashMap<String, Map<String, Any?>>()
-    for (file in files) {
-        if (file.isDirectory) {
-            file.listFiles()?.forEach { allSwitchable.putAll(loadLoreFormatFile(it, regex)) }
-        } else {
-            allSwitchable.putAll(loadLoreFormatFile(file, regex))
+    SertralineLoreFormatFileLoadPreEvent(context).call()
+    try {
+        if (!File(getDataFolder(), "lore-formats").exists()) {
+            warningL("LoreFormat_Load_Regen")
+            releaseResourceFolder("lore-formats")
         }
+        val loreFormatsFolder = File(getDataFolder(), "lore-formats")
+        val regex = SertralineSettings.fileLoadLoreFormat
+        val files = safeWalkDirectory(loreFormatsFolder, maxDepth = 10) { file ->
+            file.isFile && regex.matches(file.name)
+        }
+        val allSwitchable = LinkedHashMap<String, Map<String, Any?>>()
+        for (file in files) {
+            allSwitchable.putAll(loadLoreFormatFile(file, regex, context))
+        }
+        loadSwitchableFormats(allSwitchable, "all files", context)
+        SertralineLoreFormatFileLoadPostEvent(context).call()
+    } catch (e: Exception) {
+        SertralineLoreFormatFileLoadPostEvent(context, e).call()
+        throw e
     }
-    loadSwitchableFormats(allSwitchable, "all files")
 }
 
-fun loadLoreFormatFile(file: File, regex: String): Map<String, Map<String, Any?>> {
+fun loadLoreFormatFile(file: File, regex: Regex, context: LoadContext? = null): Map<String, Map<String, Any?>> {
     devLog("Loading file ${file.name}")
 
     if (file.isDirectory) {
-        val collected = LinkedHashMap<String, Map<String, Any?>>()
-        file.listFiles()?.forEach { collected.putAll(loadLoreFormatFile(it, regex)) }
-        return collected
+        // 目录递归已由safeWalkDirectory处理，这里直接返回空map
+        return emptyMap()
     }
-    if (!checkRegexMatch(file.name, regex)) {
+
+    if (!file.name.matches(regex)) {
         devLog("${file.name} not match regex, skipping...")
         return emptyMap()
     }
     val raw = multiExtensionLoader(file) ?: return emptyMap()
-    val map = TemplateManager.resolveInMap(raw)
+    val map = TemplateManager.resolveInMap(raw, context)
     if (map.isEmpty()) {
         severeL("Config_Load_Error_Empty", file.name)
         return emptyMap()
@@ -90,7 +105,7 @@ fun loadLoreFormatFile(file: File, regex: String): Map<String, Map<String, Any?>
     }
     normal.forEach { (key, m) ->
         try {
-            loadLoreFormat(key, m)
+            loadLoreFormat(key, m, context)
         } catch (ex: Exception) {
             severeL("LoreFormat_Load_Error_Parse", key, ex.message ?: "Unknown error")
         }
@@ -98,7 +113,7 @@ fun loadLoreFormatFile(file: File, regex: String): Map<String, Map<String, Any?>
     return switchable
 }
 
-fun loadLoreFormat(key: String, arg: Map<String, Any?>) {
+fun loadLoreFormat(key: String, arg: Map<String, Any?>, context: LoadContext? = null) {
     val c = ConfigUtil
     val elementConfigs = c.getDeep(arg, "elements") as? List<*> ?: emptyList<Any?>()
     val elements = mutableListOf<AbstractLoreElement>()
@@ -123,10 +138,18 @@ fun loadLoreFormat(key: String, arg: Map<String, Any?>) {
         )
     }
     val settingsMap = c.getDeep(arg, "settings") as? Map<*, *>
+
+    val visual = if (packetLoreLF) {
+        settingsMap?.get("visual") as? Boolean ?: false
+    } else {
+        warningL("Warning_Packet_Lore_Not_Enabled", key)
+        false
+    }
+
     val loreFormat = LoreFormat(
         settings = LoreSetting(
             overwrite = settingsMap?.get("overwrite") as? Boolean ?: true,
-            visual = settingsMap?.get("visual") as? Boolean ?: true,
+            visual = visual,
             skipBlank = settingsMap?.get("auto-skip-blank") as? Boolean ?: true,
             compareEnabled = settingsMap?.get("compare-enabled") as? Boolean ?: false,
             compare = loadCompareSetting(settingsMap?.get("compare") as? Map<*, *>),
@@ -135,7 +158,7 @@ fun loadLoreFormat(key: String, arg: Map<String, Any?>) {
     )
     // Validate element compareName cross-references against the format's own compare settings
     validateCompareNameRefs(key, loreFormat)
-    loreFormats[key] = loreFormat
+    loreFormatSink(context)[key] = loreFormat
 }
 
 // ── Element-level compare ──────────────────────────────────────
@@ -156,7 +179,8 @@ private fun loadElementCompare(m: Map<*, *>): CompareElementSetting? {
 
 // ── Switchable format loading ──────────────────────────────────
 
-private fun loadSwitchableFormats(switchable: Map<String, Map<String, Any?>>, fileName: String) {
+private fun loadSwitchableFormats(switchable: Map<String, Map<String, Any?>>, fileName: String, context: LoadContext? = null) {
+    val sink = loreFormatSink(context)
     val pending = switchable.toMutableMap()
     val pendingIt = pending.entries.iterator()
     while (pendingIt.hasNext()) {
@@ -173,9 +197,9 @@ private fun loadSwitchableFormats(switchable: Map<String, Map<String, Any?>>, fi
         val iterator = pending.entries.iterator()
         while (iterator.hasNext()) {
             val (key, m) = iterator.next()
-            if (isSwitchableReady(m)) {
+            if (isSwitchableReady(m, sink)) {
                 try {
-                    loadSwitchableLoreFormat(key, m)
+                    loadSwitchableLoreFormat(key, m, sink)
                 } catch (ex: Exception) {
                     severeL("LoreFormat_Switch_Load_Error", key, fileName, ex.message ?: "Unknown error")
                 }
@@ -185,28 +209,28 @@ private fun loadSwitchableFormats(switchable: Map<String, Map<String, Any?>>, fi
         }
     }
     pending.forEach { (key, m) ->
-        val missing = missingSwitchTargets(m)
+        val missing = missingSwitchTargets(m, sink)
         severeL("LoreFormat_Switch_Load_Unresolved", key, fileName, missing.joinToString(", "))
     }
 }
 
-private fun isSwitchableReady(arg: Map<String, Any?>): Boolean {
+private fun isSwitchableReady(arg: Map<String, Any?>, sink: Map<String, AbstractLoreFormat>): Boolean {
     val whenList = ConfigUtil.getDeep(arg, "when") as? List<*> ?: return false
     if (whenList.isEmpty()) return false
     return whenList.all { item ->
         val then = (item as? Map<*, *>)?.get("then")?.toString()
-        then != null && loreFormats.containsKey(then)
+        then != null && sink.containsKey(then)
     }
 }
 
-private fun missingSwitchTargets(arg: Map<String, Any?>): List<String> {
+private fun missingSwitchTargets(arg: Map<String, Any?>, sink: Map<String, AbstractLoreFormat>): List<String> {
     return (ConfigUtil.getDeep(arg, "when") as? List<*>)?.mapNotNull { item ->
         val then = (item as? Map<*, *>)?.get("then")?.toString()
-        then?.takeUnless { loreFormats.containsKey(it) }
+        then?.takeUnless { sink.containsKey(it) }
     }?.distinct() ?: emptyList()
 }
 
-private fun loadSwitchableLoreFormat(key: String, arg: Map<String, Any?>) {
+private fun loadSwitchableLoreFormat(key: String, arg: Map<String, Any?>, sink: MutableMap<String, AbstractLoreFormat>) {
     val c = ConfigUtil
     val ovSettings = c.getDeep(arg, "overwriteable-settings") as? Map<*, *>
     val settingsOverride = if (ovSettings != null) LoreSettingOverride(
@@ -230,7 +254,7 @@ private fun loadSwitchableLoreFormat(key: String, arg: Map<String, Any?>) {
     for (item in whenList) {
         val m = item as? Map<*, *> ?: continue
         val thenKey = m["then"]?.toString() ?: continue
-        val target = loreFormats[thenKey] ?: throw IllegalArgumentException("target \"$thenKey\" not loaded")
+        val target = sink[thenKey] ?: throw IllegalArgumentException("target \"$thenKey\" not loaded")
         val conditionCompiled = compileJsSafely(m["if"]?.toString() ?: "true")
         if (conditionCompiled == null) {
             warningL("LoreFormat_Switch_Load_Condition_Compile", key, thenKey, m["if"]?.toString() ?: "")
@@ -262,7 +286,7 @@ private fun loadSwitchableLoreFormat(key: String, arg: Map<String, Any?>) {
             }
         }
     }
-    loreFormats[key] = SwitchableLoreFormat(
+    sink[key] = SwitchableLoreFormat(
         settings = LoreSetting(
             overwrite = settingsOverride?.overwrite ?: true,
             visual = settingsOverride?.visual ?: true,

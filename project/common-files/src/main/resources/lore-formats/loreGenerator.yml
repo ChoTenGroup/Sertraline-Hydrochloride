@@ -4,7 +4,7 @@ loreformat:
     overwrite: true
     # 发包模式（true=基于发包，false=直接更新物品Lore）
     # true = packet-based (client-side view), false = directly updates the item lore
-    visual: true
+    visual: false
     # 合并连续空行 | Collapse consecutive blank lines into one
     auto-skip-blank: true
   elements:

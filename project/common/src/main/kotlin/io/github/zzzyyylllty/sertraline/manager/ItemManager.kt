@@ -1,6 +1,7 @@
-package io.github.zzzyyylllty.sertraline.manager
+﻿package io.github.zzzyyylllty.sertraline.manager
 
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
+import io.github.zzzyyylllty.sertraline.data.SItemFactory
 
 class ItemManager {
 
@@ -14,7 +15,7 @@ class ItemManager {
         const val UUID = "@smanager_uuid"
     }
 
-    fun getItem(type: ManagerType, sub: SubManagerType, id: String, uuid: String? = null): ModernSItem? {
+    fun getItem(type: ManagerType, sub: SubManagerType, id: String, uuid: String? = null): AbstractSItem? {
         return when (type) {
             ManagerType.PUBLIC -> public.getItem(id, sub)
             ManagerType.PRIVATE -> {
@@ -29,7 +30,7 @@ class ItemManager {
             throw UnsupportedOperationException("Creating public-persistent items is not yet supported")
         }
         val normalizedId = if (type == ManagerType.PRIVATE) normalizePrivateItemId(id) else id
-        val item = ModernSItem(key = normalizedId, data = LinkedHashMap(data), config = linkedMapOf())
+        val item = SItemFactory.sertraline(key = normalizedId, data = LinkedHashMap(data), config = linkedMapOf())
         when (type) {
             ManagerType.PUBLIC -> {
                 public.createTemporary(id, item)
@@ -69,5 +70,10 @@ class ItemManager {
 
     fun shutdown() {
         privateManager.shutdown()
+    }
+
+    /** Evict a player's private persistent cache on quit (DB data is safe). */
+    fun evictPlayer(uuid: String) {
+        privateManager.evict(uuid)
     }
 }

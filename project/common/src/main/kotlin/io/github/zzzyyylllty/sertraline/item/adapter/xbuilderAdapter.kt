@@ -1,10 +1,9 @@
 package io.github.zzzyyylllty.sertraline.item.adapter
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
-import io.github.zzzyyylllty.sertraline.config.AdapterUtil
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.config.asListEnhanced
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.util.ComplexTypeHelper
 import io.github.zzzyyylllty.sertraline.util.parseNamespacedKey
 import io.github.zzzyyylllty.sertraline.util.loreformat.performPlaceholders
@@ -18,7 +17,7 @@ import org.bukkit.inventory.ItemStack
 import com.cryptomorin.xseries.XItemStack
 import kotlin.math.roundToInt
 
-fun xbuilderAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemStack {
+fun xbuilderAdapter(item: ItemStack, sItem: AbstractSItem, player: Player?): ItemStack {
 
     val configMap = (sItem.config["xbuilder"] as Map<String, Any?>?)?.toMutableMap() ?: return item
 
@@ -52,7 +51,7 @@ fun xbuilderAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemS
         if (lore != null) {
             PlatformCompat.setLore(deserializedMeta, lore)
         }
-        if (model != null && config.getBoolean("fixes.xbuilder.reapply-item-model", true)) {
+        if (model != null && SertralineSettings.fixXBuilderReapplyItemModel) {
             PlatformCompat.setItemModel(deserializedMeta, model.parseNamespacedKey())
         }
         item.itemMeta = deserializedMeta
@@ -61,7 +60,7 @@ fun xbuilderAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemS
         item.itemMeta?.let { meta ->
             if (name != null) PlatformCompat.setDisplayName(meta, name)
             if (lore != null) PlatformCompat.setLore(meta, lore)
-            if (model != null && config.getBoolean("fixes.xbuilder.reapply-item-model", true)) PlatformCompat.setItemModel(meta, model.parseNamespacedKey())
+            if (model != null && SertralineSettings.fixXBuilderReapplyItemModel) PlatformCompat.setItemModel(meta, model.parseNamespacedKey())
             item.itemMeta = meta
         }
     }

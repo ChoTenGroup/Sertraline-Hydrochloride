@@ -23,6 +23,27 @@
 #   { options: [...] }           — Multi-choice (any match) / 多选一
 #   { itemId: "...", amount: 2 } — Item + amount object / 物品+数量对象
 #
+# How a reference is resolved (same rule for ingredients and results):
+# ---------------------------------------------------------------
+#   1. Explicit namespace is always respected:
+#        "sertraline:xxx"  -> Sertraline item, never a vanilla material
+#        "minecraft:xxx"   -> vanilla material only; if xxx is not a material the
+#                             reference fails, it does NOT fall back to Sertraline
+#        "mc:xxx", "vanilla:xxx" -> same as minecraft
+#        "<provider>:xxx"  -> external plugin item via ItemBridge (itemsadder, oraxen, ...)
+#
+#   2. A bare name (no colon) is resolved VANILLA FIRST, for backward compatibility:
+#        "diamond"   -> DIAMOND (vanilla)
+#        "doe_card"  -> not a vanilla material, so it is used as a Sertraline item id
+#                       and a one-time warning is logged
+#
+#   Rule 2 exists because older configs rely on both meanings of a bare name
+#   (`grass_block` meaning the vanilla block, `doe_card` meaning a custom item).
+#   Always writing the `sertraline:` prefix is therefore recommended: it is
+#   unambiguous and it silences the fallback warning.
+# 裸名先按原版解析，解析不到才回落到 Sertraline 物品并输出一次性警告；
+# 建议始终写显式前缀。
+#
 # Result function (result.function):
 # Post-craft execution, supports kether / javascript / command
 # 合成后执行，支持 kether / javascript / command
@@ -286,3 +307,28 @@ craft_eternal_with_kether:
 #    count: 2
 #  experience: 2.0
 #  cookingTime: 200
+
+# -----------------------------------------------------------
+# Example 15: Vanilla ingredients — 8 paper + 1 gold ingot → star_of_recall
+# 示例 15: 原版材料 — 8 张纸 + 1 个金锭合成回忆之星
+# -----------------------------------------------------------
+# Shows the vanilla path. `minecraft:` is written explicitly here on purpose:
+# a bare `paper` would resolve to the same thing, but an explicit prefix never
+# depends on the vanilla-first fallback rule.
+# 这里显式写 minecraft: 前缀，不依赖裸名的原版优先规则。
+# -----------------------------------------------------------
+star_from_vanilla:
+  provider: SIMPLE
+  format: SHAPED
+  type: CRAFTING
+
+  pattern:
+    - "PPP"
+    - "PGP"
+    - "PPP"
+  ingredients:
+    P: "minecraft:paper"
+    G: "minecraft:gold_ingot"
+  result:
+    id: sertraline:star_of_recall
+    count: 1

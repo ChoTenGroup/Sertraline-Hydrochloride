@@ -1,9 +1,9 @@
 package io.github.zzzyyylllty.sertraline.hook
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
 import io.github.zzzyyylllty.sertraline.Sertraline.gjsScriptCache
 import io.github.zzzyyylllty.sertraline.Sertraline.jexlScriptCache
 import io.github.zzzyyylllty.sertraline.Sertraline.jsScriptCache
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.data.defaultData
 import io.github.zzzyyylllty.sertraline.function.fluxon.FluxonShell
 import io.github.zzzyyylllty.sertraline.function.kether.evalKether
@@ -136,7 +136,7 @@ class PapiHookOriginal(plugin: BukkitPlugin) : PlaceholderExpansion() {
             }.defaultValue(def)
 
         } else if (params.startsWith("config:")) {
-            return config[params.removePrefix("config:")].defaultValue(def)
+            return SertralineSettings.raw(params.removePrefix("config:")).defaultValue(def)
 
 
         } else if (params.startsWith("random:") || params.startsWith("rand:")) {

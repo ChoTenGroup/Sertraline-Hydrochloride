@@ -5,6 +5,8 @@ import io.github.zzzyyylllty.sertraline.item.sertralineItemBuilder
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.data.RecipeFunction
+import io.github.zzzyyylllty.sertraline.recipe.RecipeSourceKind
+import io.github.zzzyyylllty.sertraline.recipe.resolveRecipeReference
 import io.github.zzzyyylllty.sertraline.util.SertralineRecipeManager
 import io.github.zzzyyylllty.sertraline.util.textLines
 import org.bukkit.Keyed
@@ -27,7 +29,11 @@ import taboolib.module.kether.ScriptOptions
 
 private const val NAMESPACE = "sertraline"
 
-@SubscribeEvent(priority = EventPriority.HIGHEST)
+// HIGH, not HIGHEST: `itemRestrictionListener.onCommonPrepareCraft` runs at HIGHEST and sets
+// `inventory.result = null` to block a restricted craft. With both at HIGHEST the winner depended on
+// TabooLib's registration order, so a blocked recipe could still show (and preview) a crafted
+// Sertraline item. Rebuild first here; let the restriction listener run last and win.
+@SubscribeEvent(priority = EventPriority.HIGH)
 fun onPrepareCraft(event: PrepareItemCraftEvent) {
     val recipe = event.recipe ?: return
     if (recipe !is Keyed) return
@@ -36,11 +42,13 @@ fun onPrepareCraft(event: PrepareItemCraftEvent) {
 
     val player = event.view.player as? Player ?: return
 
-    // Only rebuild the Sertraline item result (with player variables)
-    val (namespace, key) = parseId(recipeData.result.itemId)
-    if (namespace != NAMESPACE) return
+    // Only rebuild the Sertraline item result (with player variables).
+    // 走共享解析器：裸名会先按原版材质解析，解析不到才回落 Sertraline，
+    // 与配方注册路径保持完全一致的判定。
+    val ref = resolveRecipeReference(recipeData.result.itemId) ?: return
+    if (ref.kind != RecipeSourceKind.SERTRALINE) return
 
-    val rebuilt = sertralineItemBuilder(key, player)
+    val rebuilt = sertralineItemBuilder(ref.id, player)
         ?.apply { amount = recipeData.result.count }
         ?: return
 
@@ -88,8 +96,4 @@ private fun executeFunction(func: RecipeFunction, player: Player) {
     }
 }
 
-private fun parseId(id: String): Pair<String, String> {
-    val idx = id.indexOf(':')
-    return if (idx == -1) "minecraft" to id.lowercase()
-    else id.substring(0, idx).lowercase() to id.substring(idx + 1)
-}
+

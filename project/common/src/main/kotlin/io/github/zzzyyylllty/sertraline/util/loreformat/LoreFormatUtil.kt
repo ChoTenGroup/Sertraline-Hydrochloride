@@ -1,9 +1,9 @@
-package io.github.zzzyyylllty.sertraline.util.loreformat
+﻿package io.github.zzzyyylllty.sertraline.util.loreformat
 
 import io.github.zzzyyylllty.sertraline.Sertraline.loreFormats
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
 import io.github.zzzyyylllty.sertraline.data.AbstractLoreFormat
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import net.kyori.adventure.text.Component
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -24,7 +24,7 @@ object LoreFormatUtil {
      * Generates a lore component list using the specified lore format name.
      *
      * @param item        The item ItemStack to generate lore for
-     * @param sItem       The item's ModernSItem data
+     * @param sItem       The item's AbstractSItem data
      * @param format      The lore format name (corresponds to a config under the lore-formats directory)
      * @param player      The player (used for placeholder resolution, optional)
      * @param defaultVars Extra default data, merged into the item's vars for placeholder resolution
@@ -33,7 +33,7 @@ object LoreFormatUtil {
     @JvmStatic
     fun generateLore(
         item: ItemStack,
-        sItem: ModernSItem,
+        sItem: AbstractSItem,
         format: String,
         player: Player? = null,
         defaultVars: Map<String, Any?>? = null,
@@ -54,7 +54,7 @@ object LoreFormatUtil {
      * Generates lore using the specified lore format name and sets it directly on the ItemStack.
      *
      * @param item        The item ItemStack to modify
-     * @param sItem       The item's ModernSItem data
+     * @param sItem       The item's AbstractSItem data
      * @param format      The lore format name
      * @param player      The player (used for placeholder resolution, optional)
      * @param defaultVars Extra default data, merged into the item's vars for placeholder resolution
@@ -63,7 +63,7 @@ object LoreFormatUtil {
     @JvmStatic
     fun applyLore(
         item: ItemStack,
-        sItem: ModernSItem,
+        sItem: AbstractSItem,
         format: String,
         player: Player? = null,
         defaultVars: Map<String, Any?>? = null,

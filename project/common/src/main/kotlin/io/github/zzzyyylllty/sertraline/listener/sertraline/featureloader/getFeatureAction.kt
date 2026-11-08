@@ -1,10 +1,9 @@
 package io.github.zzzyyylllty.sertraline.listener.sertraline.featureloader
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
 import io.github.zzzyyylllty.sertraline.Sertraline.gjsScriptCache
-import io.github.zzzyyylllty.sertraline.Sertraline.itemCache
 import io.github.zzzyyylllty.sertraline.Sertraline.jexlScriptCache
 import io.github.zzzyyylllty.sertraline.Sertraline.jsScriptCache
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.config.asListEnhanced
 import io.github.zzzyyylllty.sertraline.config.asListedStringEnhanced
 import io.github.zzzyyylllty.sertraline.event.FeatureLoadEvent
@@ -50,7 +49,7 @@ fun getFeatureAction(e: FeatureLoadEvent) {
         for (map in list) {
 
             // Pre-compile script
-            if (config.getBoolean("preload.script.jexl",true)) (map["jexl"] as? String)?.let { script ->
+            if (SertralineSettings.preloadScriptJexl) (map["jexl"] as? String)?.let { script ->
                 try {
                     val compiled = prodJexlCompiler.compileToScript(script)
                     jexlScriptCache[script.generateHash()] = compiled
@@ -61,7 +60,7 @@ fun getFeatureAction(e: FeatureLoadEvent) {
                     severeS("exception: $ex")
                 }
             }
-            if (config.getBoolean("preload.script.javascript",true)) (map["javascript"] as? String)?.let { script ->
+            if (SertralineSettings.preloadScriptJavascript) (map["javascript"] as? String)?.let { script ->
                 try {
                     val compiled = script.compileJS()
                     compiled?.let { jsScriptCache[script.generateHash()] = it }
@@ -73,10 +72,10 @@ fun getFeatureAction(e: FeatureLoadEvent) {
                 }
             }
             // legacy12 has no bundled GraalJS, so skip pre-compilation (at runtime GraalJsUtil guards and falls back to Nashorn)
-            if (!VersionHelper().isLegacy() && config.getBoolean("preload.script.graaljs",true)) (map["graaljs"] as? String)?.let { script ->
+            if (!VersionHelper.isLegacy() && SertralineSettings.preloadScriptGraalJs) (map["graaljs"] as? String)?.let { script ->
                 try {
                     val compiled = GraalJsUtil.compile(script)
-                    compiled?.let { gjsScriptCache[script.generateHash()] = it }
+                    compiled?.let { gjsScriptCache.put(script.generateHash(), it) }
                 } catch (ex: Exception) {
                     severeS("An error was occurred in trying to pre-compile Graal-js script.")
                     severeS("Item: ${e.sItemKey}")
@@ -93,12 +92,15 @@ fun getFeatureAction(e: FeatureLoadEvent) {
         actions[it.key as String] = list
     }
 
-    val cache = e.sItemKey?.let { itemCache[it] }?.toMutableMap() ?: mutableMapOf()
+    // context 模式写候�?itemCache（发布时合并回全局），�?context 直接写全局�?
+    val cacheSink: MutableMap<String, Map<String, Any?>> =
+        e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
+    val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()
 
     cache["preloadActions"] = ComplexTypeHelper(actions).getAsActions()
     cache["actions"] = triggers
 
-    e.sItemKey?.let { itemCache[it] = cache }
+    e.sItemKey?.let { cacheSink[it] = cache }
 
     e.result = actions
 }

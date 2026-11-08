@@ -1,8 +1,7 @@
 package io.github.zzzyyylllty.sertraline.item.adapter
 
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
-import io.github.zzzyyylllty.sertraline.config.AdapterUtil
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.util.loreformat.handleLoreFormat
 import org.bukkit.entity.Player
@@ -11,7 +10,7 @@ import taboolib.module.nms.getItemTag
 import taboolib.module.nms.setItemTag
 import java.util.LinkedHashMap
 
-fun mmoAdapter(item: ItemStack, sItem: ModernSItem, player: Player?): ItemStack {
+fun mmoAdapter(item: ItemStack, sItem: AbstractSItem, player: Player?): ItemStack {
 
     val fix = (sItem.getDeepData("mmo:fix-attack-speed") as? Boolean?)
     if (fix == null) {

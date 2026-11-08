@@ -231,11 +231,31 @@
 
 `getAllPrivateItems(uuid: String, sub: SubManagerType): Map<String, ModernSItem>`
 
+### updateSItem（私有物品）
+
+更新指定 UUID 的私人物品。持久管理器会同步更新数据库；返回旧物品，不存在时返回 `null`。
+
+`updateSItem(uuid: String, id: String, item: ModernSItem, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
+
+也可以直接使用 `ModernSItem.key` 作为 ID：
+
+`updateSItem(uuid: String, item: ModernSItem, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
+
 ### registerItem
 
 直接注册物品到 `itemMap`（持久化公共物品）。
 
 `registerItem(id: String, item: ModernSItem): Unit`
+
+### updateSItem
+
+直接更新 `itemMap` 中的公共物品。返回被替换的旧物品；如果原 ID 不存在则返回 `null`。
+
+`updateSItem(id: String, item: ModernSItem): ModernSItem?`
+
+也可以直接使用 `ModernSItem.key` 作为 ID：
+
+`updateSItem(item: ModernSItem): ModernSItem?`
 
 ### unregisterItem
 

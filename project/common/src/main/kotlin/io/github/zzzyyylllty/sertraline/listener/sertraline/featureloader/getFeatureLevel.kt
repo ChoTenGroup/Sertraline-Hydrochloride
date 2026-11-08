@@ -27,8 +27,8 @@ fun getFeatureLevel(e: FeatureLoadEvent) {
         }
     }
 
-    // Find the corresponding level
-    val level = levels[levelId]
+    // Find the corresponding level (context 模式优先候选表，未命中回读 live)
+    val level = e.context?.let { it.levels[levelId] ?: it.liveLevels[levelId] } ?: levels[levelId]
     if (level == null) {
         warningS("Level '$levelId' not found for item ${e.sItemKey}")
         // Return the original value and let default handling continue
@@ -39,9 +39,11 @@ fun getFeatureLevel(e: FeatureLoadEvent) {
     // Set the result to the level ID (string)
     e.result = levelId
 
-    // Also store the level reference in itemCache
-    val cache = io.github.zzzyyylllty.sertraline.Sertraline.itemCache[e.sItemKey]?.toMutableMap() ?: mutableMapOf()
+    // Also store the level reference in itemCache（context 模式写候选，发布时合并）
+    val cacheSink: MutableMap<String, Map<String, Any?>> =
+        e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
+    val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()
     cache["level"] = level
     cache["levelId"] = levelId
-    e.sItemKey?.let { io.github.zzzyyylllty.sertraline.Sertraline.itemCache[it] = cache }
+    e.sItemKey?.let { cacheSink[it] = cache }
 }

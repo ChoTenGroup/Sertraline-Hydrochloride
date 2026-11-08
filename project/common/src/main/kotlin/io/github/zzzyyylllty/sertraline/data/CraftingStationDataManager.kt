@@ -2,6 +2,7 @@ package io.github.zzzyyylllty.sertraline.data
 
 import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.database.CraftingSession
 import io.github.zzzyyylllty.sertraline.database.DatabaseManager
 import io.github.zzzyyylllty.sertraline.gui.CraftingStationManager
@@ -109,9 +110,7 @@ object CraftingStationDataManager {
                         player.giveItem(stack)
                     }
                     CraftingStationManager.fireLifecycleAgents(station!!, recipe, "onClaim", player)
-                    PlatformCompat.sendComponent(player, (Sertraline.config
-                        .getString("messages.crafting-complete", "<green>Crafting complete!</green>")
-                        ?: "<green>Crafting complete!</green>").toComponent()
+                    PlatformCompat.sendComponent(player, SertralineSettings.msgCraftingComplete.toComponent()
                     )
                     infoS("Restored completed craft for ${player.name}: ${pending.recipeId}")
                 } else {

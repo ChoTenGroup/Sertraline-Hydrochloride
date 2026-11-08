@@ -2,7 +2,7 @@ switchable_format:
   mode: switch
   overwriteable-settings:
     overwrite: true
-    visual: true
+    visual: false
     auto-skip-blank: true
   pre-variables:
     # 预编译 JS 表达式，结果绑定到变量供下方 when 条件使用

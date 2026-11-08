@@ -2,13 +2,16 @@ package io.github.zzzyyylllty.sertraline.attribute
 
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.item.itemSerializer
+import io.github.zzzyyylllty.sertraline.logger.warningS
 import org.bukkit.entity.Player
-import org.bukkit.inventory.EquipmentSlot
 import taboolib.common.platform.function.submit
-import taboolib.common.platform.function.submitAsync
 
 object AttributeManager {
-    private val providers = LinkedHashMap<String, AttributeProvider>()
+    // Concurrent on purpose: providers are registered/unregistered at runtime (reload, third-party
+    // plugins) while a refresh is iterating. A plain LinkedHashMap threw
+    // ConcurrentModificationException, or silently lost a provider, in that window. Iteration order
+    // stays insertion order, which is what the provider contract documents.
+    private val providers = java.util.Collections.synchronizedMap(LinkedHashMap<String, AttributeProvider>())
 
     fun register(provider: AttributeProvider) {
         providers[provider.name] = provider
@@ -23,10 +26,19 @@ object AttributeManager {
         providers.clear()
     }
 
-    fun listProviders(): List<String> = providers.keys.toList()
+    fun listProviders(): List<String> = synchronized(providers) { providers.keys.toList() }
 
+    /**
+     * Recomputes the player's attribute set from the items they currently wear.
+     *
+     * Runs on the **main thread**: the inventory is Bukkit state and [itemSerializer] touches
+     * `ItemMeta`/NBT, neither of which may be read off-thread. The previous implementation wrapped
+     * the whole read in `submitAsync`, so it could observe a half-applied inventory change or throw
+     * from a region/thread-checking server. Providers are then invoked in the same tick.
+     */
     fun refreshAttributes(player: Player) {
-        submitAsync {
+        submit {
+            if (!player.isOnline) return@submit
             val inv = player.inventory
             val itemList = LinkedHashMap<String, ItemBound>()
 
@@ -49,16 +61,21 @@ object AttributeManager {
                 itemSerializer(bItem, player)?.let { itemList["boots"] = ItemBound(it, bItem) }
             }
 
-            submit {
-                for (provider in providers.values) {
-                    try {
-                        provider.refreshAttributes(player, itemList)
-                    } catch (e: Exception) {
-                        devLog("AttributeProvider[${provider.name}] error: ${e.message}")
-                        e.printStackTrace()
-                    }
+            for (provider in snapshotProviders()) {
+                try {
+                    provider.refreshAttributes(player, itemList)
+                } catch (e: Throwable) {
+                    // A failing provider used to be logged at debug level only, so a broken hook
+                    // looked like "the player simply has less attack damage". Warn loudly instead —
+                    // one bad provider must not silence the rest either.
+                    warningS("AttributeProvider[${provider.name}] failed for ${player.name}: ${e.message}")
+                    devLog("AttributeProvider[${provider.name}] stack trace follows")
+                    e.printStackTrace()
                 }
             }
         }
     }
+
+    private fun snapshotProviders(): List<AttributeProvider> =
+        synchronized(providers) { providers.values.toList() }
 }

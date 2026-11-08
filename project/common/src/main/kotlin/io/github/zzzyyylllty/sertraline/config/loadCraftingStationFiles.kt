@@ -1,8 +1,10 @@
 package io.github.zzzyyylllty.sertraline.config
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
 import io.github.zzzyyylllty.sertraline.Sertraline.craftingStations
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.data.*
+import io.github.zzzyyylllty.sertraline.event.SertralineCraftingStationFileLoadPostEvent
+import io.github.zzzyyylllty.sertraline.event.SertralineCraftingStationFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.severeL
 import io.github.zzzyyylllty.sertraline.logger.warningL
@@ -11,45 +13,45 @@ import taboolib.common.platform.function.getDataFolder
 import taboolib.common.platform.function.releaseResourceFolder
 import java.io.File
 
-fun loadCraftingStationFiles() {
+fun loadCraftingStationFiles(context: LoadContext? = null) {
     infoL("CraftingStation_Load")
+    SertralineCraftingStationFileLoadPreEvent(context).call()
+    try {
+        val stationsFolder = File(getDataFolder(), "crafting-stations")
+        if (!stationsFolder.exists()) {
+            warningL("CraftingStation_Load_Regen")
+            releaseResourceFolder("crafting-stations")
+        }
 
-    val stationsFolder = File(getDataFolder(), "crafting-stations")
-    if (!stationsFolder.exists()) {
-        warningL("CraftingStation_Load_Regen")
-        releaseResourceFolder("crafting-stations")
+        val regex = SertralineSettings.fileLoadCraftingStation
+        val files = safeWalkDirectory(stationsFolder, maxDepth = 10) { file ->
+            file.isFile && regex.matches(file.name)
+        }
+        for (file in files) {
+            loadCraftingStationFile(file, regex, context)
+        }
+
+        SertralineCraftingStationFileLoadPostEvent(context).call()
+        infoL("CraftingStation_Load_Complete", context?.craftingStations?.size ?: craftingStations.size)
+    } catch (e: Exception) {
+        SertralineCraftingStationFileLoadPostEvent(context, e).call()
+        throw e
     }
-
-    val files = stationsFolder.listFiles()
-    if (files == null) {
-        severeL("CraftingStation_Load_Not_Found")
-        return
-    }
-
-    val regex = (config["file-load.crafting-station"] ?: ".*").toString()
-    // loadCraftingStationFile already handles directories recursively
-    for (file in files) {
-        loadCraftingStationFile(file, regex)
-    }
-
-    infoL("CraftingStation_Load_Complete", craftingStations.size)
 }
 
-fun loadCraftingStationFile(file: File, regex: String): Boolean {
+fun loadCraftingStationFile(file: File, regex: Regex, context: LoadContext? = null): Boolean {
     if (file.isDirectory) {
-        file.listFiles()?.forEach {
-            loadCraftingStationFile(it, regex)
-        }
+        // 目录递归已由safeWalkDirectory处理，这里直接返回false
         return false
     }
 
-    if (!checkRegexMatch(file.name, regex)) {
+    if (!file.name.matches(regex)) {
         return false
     }
 
     return try {
         val raw = multiExtensionLoader(file) ?: return false
-        val map = TemplateManager.resolveInMap(raw)
+        val map = TemplateManager.resolveInMap(raw, context)
 
         if (map.isEmpty()) {
             severeL("CraftingStation_Load_Error_Empty", file.name)
@@ -60,7 +62,7 @@ fun loadCraftingStationFile(file: File, regex: String): Boolean {
             val stationId = entry.key
             try {
                 val station = parseCraftingStation(stationId, entry.value as? Map<String, Any?>? ?: linkedMapOf())
-                craftingStations[stationId] = station
+                if (context != null) context.craftingStations[stationId] = station else craftingStations[stationId] = station
             } catch (e: Exception) {
                 severeL("CraftingStation_Load_Error_Station", file.name, stationId, e.message ?: "Unknown error")
             }

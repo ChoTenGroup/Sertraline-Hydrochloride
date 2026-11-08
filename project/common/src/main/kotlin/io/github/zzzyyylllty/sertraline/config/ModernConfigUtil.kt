@@ -1,5 +1,6 @@
 package io.github.zzzyyylllty.sertraline.config
 
+import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.Sertraline.console
 import io.github.zzzyyylllty.sertraline.Sertraline.mappings
 import io.github.zzzyyylllty.sertraline.event.FeatureLoadEvent
@@ -14,7 +15,7 @@ object ConfigUtil {
         return input?.toString()
     }
     fun getInt(input: Any?): Int? {
-        return input?.toString()?.toInt()
+        return input?.toString()?.toIntOrNull()
     }
 
     fun getLong(input: Any?): Long? {
@@ -45,9 +46,9 @@ object ConfigUtil {
         return (current != null)
     }
 
-    fun getFeature(sItemId: String?, input: Map<*, *>?, feature: String): Any? {
-        val geted = getFeatureDefault(input, feature)
-        val event = FeatureLoadEvent(sItemId,geted, feature, null)
+    fun getFeature(sItemId: String?, input: Map<*, *>?, feature: String, context: LoadContext? = null): Any? {
+        val geted = getFeatureDefault(input, feature, context)
+        val event = FeatureLoadEvent(sItemId, geted, feature, null, context)
         event.call()
         return event.result ?: geted // if no special treatment was triggered
     }
@@ -57,11 +58,12 @@ object ConfigUtil {
         sItemId: String?,
         input: Map<*, *>?,
         features: List<String>,
-        final: Map<String, Any?>? = null
+        final: Map<String, Any?>? = null,
+        context: LoadContext? = null,
     ): Map<String, Any?> {
         val baseMap = final?.toMutableMap() ?: linkedMapOf()
         features.forEach { feature ->
-            val unparsed = getFeature(sItemId, input, feature)
+            val unparsed = getFeature(sItemId, input, feature, context)
             unparsed?.let { baseMap[feature] = transformValue(it) }
         }
         return baseMap
@@ -75,13 +77,18 @@ object ConfigUtil {
 
 
 }
-fun getFeatureDefault(input: Map<*, *>?, feature: String): Any? {
+fun getFeatureDefault(input: Map<*, *>?, feature: String, context: LoadContext? = null): Any? {
 
     if (input == null) {
         return null
     }
 
-    val mapping = mappings[feature]
+    // context 模式：优先 candidate，未命中回读 live（增量加载时未变更映射仍在 live 表）
+    val mapping: List<String>? = if (context != null) {
+        context.mappings[feature] ?: Sertraline.mappings[feature]
+    } else {
+        mappings[feature]
+    }
     if (mapping == null) {
         warningS(console.asLangText("Warning_No_Mapping", feature))
         return null
@@ -97,14 +104,18 @@ fun getFeatureDefault(input: Map<*, *>?, feature: String): Any? {
     return null
 }
 
-private val regexCache = ConcurrentHashMap<String, Regex>()
+// Lazy AND typed as ConcurrentMap (not Caffeine's Cache). This is a file-level (facade) property, so an eager
+// initializer would resolve Caffeine the first time ANY member of this file is touched; and because `by lazy`
+// allocates its lambda in the facade's <clinit>, a Caffeine-typed property would make the verifier resolve the
+// lambda's return type there too. Caffeine only exists after LifeCycle.INIT, so both must be avoided.
+private val regexCache: java.util.concurrent.ConcurrentMap<String, Regex> by lazy {
+    com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+        .maximumSize(512)
+        .build<String, Regex>()
+        .asMap()
+}
 
 fun checkRegexMatch(input: String, regex: String): Boolean {
-    val compiledRegex = regexCache.computeIfAbsent(regex) {
-        if (regexCache.size >= 256) {
-            regexCache.clear()
-        }
-        it.toRegex()
-    }
-    return input.matches(compiledRegex)
+    val compiledRegex = regexCache.computeIfAbsent(regex) { it.toRegex() }
+    return input.matches(compiledRegex!!)
 }

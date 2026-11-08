@@ -20,9 +20,8 @@ import taboolib.library.xseries.XItemStack
 import taboolib.module.nms.NMSItemTag.Companion.asNMSCopy
 import kotlin.math.roundToInt
 
-private val specialItemNamespace = listOf("minecraft", "mc", "vanilla")
-private val sertralineNamespace = listOf("sertraline", "depazitems", "depaz")
-val componentHelper by lazy { if (VersionHelper().isOrAbove12005()) EmbianComponent.SafetyComponentSetter else null }
+// 命名空间别名表统一由 SItemFactory.classify 维护，这里不再保留各自的副本
+val componentHelper by lazy { if (VersionHelper.isOrAbove12005()) EmbianComponent.SafetyComponentSetter else null }
 
 data class OmniItem(
     val source: String,
@@ -40,13 +39,13 @@ data class OmniItem(
         try {
             val providedItem = when {
                 // Vanilla items (mc / minecraft / vanilla)
-                specialItemNamespace.contains(source) -> {
+                SItemFactory.classify(source) == SItemFactory.SourceKind.MINECRAFT -> {
                     val params = (parameters ?: mapOf<String, Any?>()).toMutableMap()
                     params["material"] = item
                     XItemStack.deserialize(params)
                 }
                 // Sertraline-owned items
-                sertralineNamespace.contains(source) -> {
+                SItemFactory.classify(source) == SItemFactory.SourceKind.SERTRALINE -> {
                     if (player != null) sertralineItemBuilder(item, player)
                     else sertralineItemBuilder(item, null)
                 }
@@ -90,7 +89,7 @@ return ItemStack(XMaterial.GRASS_BLOCK.parseMaterial() ?: Material.STONE)
 
         }
         if (!components.isNullOrEmpty()) {
-            if (VersionHelper().isOrAbove12005()) {
+            if (VersionHelper.isOrAbove12005()) {
                 var nmsStack = asNMSCopy(itemStack)
                 components.forEach {
                     val value = it.value

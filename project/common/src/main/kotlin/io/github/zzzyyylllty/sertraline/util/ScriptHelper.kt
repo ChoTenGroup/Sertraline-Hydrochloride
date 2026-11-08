@@ -139,7 +139,7 @@ object ScriptHelper {
             for (key in config.getKeys(false)) {
                 val section = config.getConfigurationSection(key) ?: continue
                 // legacy12 has no GraalJS (Nashorn compatible), so default to the built-in JSR 223; other platforms default to GraalJS
-                val typeStr = section.getString("type") ?: if (VersionHelper().isLegacy()) "javascript" else "graaljs"
+                val typeStr = section.getString("type") ?: if (VersionHelper.isLegacy()) "javascript" else "graaljs"
                 val script = section.getString("script") ?: continue
 
                 val type = try {

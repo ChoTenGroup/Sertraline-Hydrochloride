@@ -1,6 +1,6 @@
 package io.github.zzzyyylllty.sertraline.util.minimessage
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.item.adapter.transferBooleanToByte
 import net.kyori.adventure.text.Component
 import kotlin.collections.component1
@@ -14,7 +14,7 @@ fun String.toComponentJson(): String {
 }
 
 fun List<String>.toComponent(): List<Component> {
-    return if (config.getBoolean("performance.adventure.use-split-replace-list-serialize", false)) listOf(FastMiniMessage.deserialize(this.joinToString("<br>"))) else this.map { FastMiniMessage.deserialize(it) }
+    return if (SertralineSettings.useSplitReplaceListSerialize) listOf(FastMiniMessage.deserialize(this.joinToString("<br>"))) else this.map { FastMiniMessage.deserialize(it) }
 }
 
 fun Any?.serializeComponent(): Any? {

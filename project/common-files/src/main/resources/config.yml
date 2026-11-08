@@ -2,12 +2,36 @@
 # 大部分设置需要重启以应用更改
 # MOST SETTINGS REQUIRED RESTART TO APPLY CHANGES
 
+# 配置文件结构版本，请勿手动修改
+# Config file schema version, do not modify
+config-version: 2
+
 # 调试模式 debug
 # Debug mode
 debug: false
 
 # 语言 language
 lang: en_US
+
+# FastStats 数据统计（类似 bStats 的匿名使用统计，https://docs.faststats.dev/java）
+# 默认开启，不采集 IP / 玩家数据 / 个人信息；首次启动只提示不上报，重启后才开始提交
+# 退出方式：metrics.enabled=false，或 plugins/faststats/config.properties 的 enabled=false
+# FastStats anonymous usage metrics, bStats-like (https://docs.faststats.dev/java)
+# Enabled by default; collects no IP addresses, player data or personal information. The first
+# start only prints a notice; opt out via metrics.enabled=false or the FastStats config file.
+metrics:
+  enabled: true
+  # Sertraline 的 FastStats 项目 token（32 位小写字母/数字），随插件分发，与 bStats 的 plugin id 同性质
+  # 仅在要把数据上报到自己的项目时才需修改；清空则不再上报
+  # Sertraline's FastStats project token, shipped with the plugin (not a secret, like a bStats plugin id)
+  # Only change it to report into your own project; clearing it disables submission
+  token: "48b10c752e7ff60620bc630506d81223"
+  # 上报未捕获异常（需在 FastStats 项目中启用错误追踪）
+  # Report uncaught exceptions (error tracking must be enabled in the project)
+  error-tracking: false
+  # 上报插件自定义指标（数据源需先在 FastStats 项目中按同名同类型创建）
+  # Submit plugin custom metrics (data sources must exist in the project with a matching id and type)
+  custom-metrics: true
 
 # 物品更新系统
 # Item Update System — automatically rebuilds items when their definition changes
@@ -24,12 +48,17 @@ item-update:
   # 触发器：何时检查并更新物品
   # Triggers: when to check and update items
   triggers:
-    on-login: true       # 玩家登录时检查全部背包 Check all inventories on player login
-    on-hold: true        # 玩家切换手持物品时检查 Check when the player switches held item
-    on-interact: true    # 玩家交互时检查手持物品 Check held item on player interaction
-    async-interval: 0    # 定时检查 (单位: tick, 0=禁用) Periodic check (in ticks, 0=disabled)
-  # 更新时是否通知玩家
-  # Whether to notify the player of updates
+    on-login: true           # 玩家登录时检查全部背包（含护甲/副手/末影箱） Check the whole inventory on player login (armor/offhand/ender chest included)
+    on-hold: true            # 玩家切换手持物品时检查 Check when the player switches held item
+    on-interact: true        # 玩家交互时检查手持物品 Check held item on player interaction
+    on-swap-hand: true       # 玩家 F 键交换主副手后检查两个槽位 Check both hands after swapping them (F key)
+    on-pickup: true          # 玩家拾取掉落物时检查（1.13+；1.12 不适用） Check a dropped item when a player picks it up (1.13+; not available on 1.12)
+    on-container-open: true  # 打开方块容器（箱子/木桶/潜影盒等）时检查容器内物品 Check container contents when a block container is opened
+    on-armor-change: true    # 护甲槽变化时检查护甲物品 Check armor items when an armor slot changes
+    on-reload: true          # 重载配置后立即刷新在线玩家 Refresh online players right after a config reload
+    async-interval: 0        # 定时检查间隔 (单位: tick, 0=禁用)，主线程扫描在线玩家；建议 6000 (5 分钟) 级别 Periodic check (in ticks, 0=disabled), scans online players on the main thread; prefer something like 6000 (5 min)
+  # 更新时是否通知玩家（同一批检查合并为一条消息）
+  # Whether to notify the player of updates (one merged message per check batch)
   notify: true
 
 file-load:
@@ -41,6 +70,9 @@ file-load:
   mapping: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
   crafting-station: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
   recipe: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
+  tier: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
+  type: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
+  level: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
 
 
 
@@ -55,6 +87,11 @@ preload:
 
 # 模块
 # Modules
+#
+# `feature: false` unregisters the matching item processor, so that segment of the
+# item config is no longer applied when an item is built. The key must match the
+# processor name exactly; unknown keys are ignored and every processor defaults to on.
+# 每一项对应一个物品处理器，`feature: false` 会注销该处理器。
 modules:
   common:
     feature: true
@@ -68,6 +105,15 @@ modules:
   minecraft:
     feature: true
     editor: false
+  custom_data:
+    feature: true
+    editor: false
+  chotenatb:
+    feature: true
+    editor: true
+  chotenatb_complex:
+    feature: true
+    editor: true
   visual:
     feature: true
     editor: false
@@ -83,15 +129,37 @@ placeholders:
   minus: "-"
 
 rebuild:
+  # 重建时保留的数据键 NBT keys preserved on rebuild
+  # sertraline_gem 存放已镶嵌的宝石，缺失会导致重建后宝石状态丢失
+  # sertraline_gem holds socketed gems; omitting it drops the gem state on every rebuild
   keep-data:
     - sertraline_data
     - sertraline_revision
+    - sertraline_gem
   keep-component:
 #    - minecraft:custom_name
     - minecraft:damage
     - minecraft:max_damage
     - minecraft:repair_cost
     - minecraft:enchantments
+
+# 宝石系统 gem system
+# 物品/槽位/宝石也可以在自身配置里用 click: false 单独禁用点击镶嵌
+# Items, sockets and gems can also opt out individually with click: false
+gem:
+  interaction:
+    # 点击镶嵌：手持宝石点击带槽位的物品
+    # click-to-socket: hold a gem on the cursor, click a socketable item
+    click:
+      # 总开关 master switch
+      enable: true
+      # 允许触发镶嵌的点击方式 LEFT / RIGHT / SHIFT_LEFT / SHIFT_RIGHT / DOUBLE_CLICK
+      # Click gestures that socket a gem
+      types:
+        - RIGHT
+      # 所需权限，留空则不检查；命令 /sertralinegem 不受此限制
+      # Required permission, blank = none; the /sertralinegem command is not affected
+      permission: ""
 
 # 发包相关功能
 # Packet related features
@@ -100,6 +168,8 @@ packet:
   # 不启用或不安装packetevents 2.10+ 所有发包功能均不会生效
   # Whether to register the packet handler
   # If not enabled or packetevents 2.10+ is not installed, all packet sending functions will not take effect
+  # 注意: 修改此项需要重启服务器 (reload 不会重新注册 packet handler)
+  # Note: changing this requires a server restart (reload does not re-register the packet handler)
   register: true
 
   # 是否启用发包Lore
@@ -112,9 +182,16 @@ packet:
 
 # 标签解析
 # Tag parsing
+#
+# Keys are tag processor names, not tag prefixes. `val`, `var`, `dynamic`, `kether` and
+# `context` are all aliases handled by the `sertraline` processor, so switching them off
+# individually does work, but they share the `sertraline` code path.
+# 这里的键是标签处理器名；val/var/dynamic/kether/context 由 sertraline 处理器统一实现。
 tags:
   sertraline: true
   papi: true
+  nbt: true
+  gem-slot: true
   val: true
   var: true
   dynamic: true
@@ -164,14 +241,21 @@ action:
 database:
   # 数据库类型（true: MySQL；false: SQLite）
   # Database type (true: MySQL; false: SQLite)
+  # 注意: database 段所有配置均为启动期读取，修改后需要重启服务器 (reload 时会给出警告提示)
+  # Note: all database options are read once at startup; changing them requires a restart
+  # (a warning is printed on reload when changes are detected)
   enable: false
   # data.db，SQLite 数据库文件名
   # data.db for SQLite Database File.
   filename: data
   host: localhost
   port: 3306
-  user: x_angelkawaii_x
-  password: angelkawaii2
+  # MySQL 用户名（默认留空，启用 database 时填写）
+  # MySQL username (leave empty by default; fill in when database enabled)
+  user: ""
+  # MySQL 密码（默认留空，启用 database 时填写）
+  # MySQL password (leave empty by default; fill in when database enabled)
+  password: ""
   database: sertraline
   table: sertraline_data
 

@@ -153,6 +153,13 @@ data class SDataAlteration(
         if (value == null) return
 
         val current = navigateToValue(path, data)
+        // Missing target: treat it as 0 so a `+n` gem still works on an item whose
+        // template never declared that variable. A non-numeric existing value is
+        // left untouched (adding a number to a string is meaningless).
+        if (current == null) {
+            setDeepData(path, value, data)
+            return
+        }
         if (current is Number) {
             val newValue = when (current) {
                 is Double -> current + value.toDouble()
@@ -227,7 +234,7 @@ data class SDataAlteration(
     }
 
     private fun mapClearDeepData(path: ParsedPath, value: Any?, data: LinkedHashMap<String, Any?>) {
-        val map = navigateToValue(path, data) as? MutableList<Any?>
+        val map = navigateToValue(path, data) as? MutableMap<String, Any?>
         map?.clear()
     }
 

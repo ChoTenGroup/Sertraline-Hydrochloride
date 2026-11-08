@@ -3,7 +3,8 @@ package io.github.zzzyyylllty.sertraline.util.dependencies
 import com.github.retrooper.packetevents.PacketEvents
 import com.github.retrooper.packetevents.event.PacketListenerPriority
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.config.common.SertralineConfigManager
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import taboolib.common.LifeCycle
@@ -13,7 +14,10 @@ import taboolib.platform.util.bukkitPlugin
 object PacketEventsUtil {
     @Awake(LifeCycle.LOAD)
     fun onInitPacketEvents() {
-        if (!DependencyHelper.pe || !config.getBoolean("packet.register", true)) return
+        // PacketEvents initializes before ENABLE, where SertralineConfigManager.bind() normally runs —
+        // bind early so packet.register is readable from SertralineSettings
+        SertralineConfigManager.bind()
+        if (!DependencyHelper.pe || !SertralineSettings.packetRegister) return
         PacketEvents.setAPI(SpigotPacketEventsBuilder.build(bukkitPlugin))
         PacketEvents.getAPI().load()
 
@@ -30,14 +34,14 @@ object PacketEventsUtil {
 
     @Awake(LifeCycle.ENABLE)
     fun onEnablePacketEvents() {
-        if (!DependencyHelper.pe || !config.getBoolean("packet.register", true)) return
+        if (!DependencyHelper.pe || !SertralineSettings.packetRegister) return
         //Initialize!
         PacketEvents.getAPI().init()
     }
 
     @Awake(LifeCycle.DISABLE)
     fun onDisablePacketEvents() {
-        if (!DependencyHelper.pe || !config.getBoolean("packet.register", true)) return
+        if (!DependencyHelper.pe || !SertralineSettings.packetRegister) return
         //Terminate the instance (clean up process)
         PacketEvents.getAPI().terminate()
     }

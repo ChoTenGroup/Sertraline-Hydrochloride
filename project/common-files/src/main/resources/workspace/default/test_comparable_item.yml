@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────
-#  A single English example item using the comparison lore format
-#  (see lore-formats/compare_example.yml -> comparable_item).
+#  Two English example items using the comparison lore format
+#  (see lore-formats/compare_example.yml -> comparable_format).
 #
-#  When skyline_sword's lore is (re)rendered, it compares its own
+#  When comparable_sword's lore is (re)rendered, it compares its own
 #  attribute values against the item the player currently has equipped
 #  in the slot named by sertraline.compare-path.
 #
@@ -11,18 +11,23 @@
 #                             both mean the main hand. There is NO template
 #                             reference item — the target is whatever is in
 #                             that slot on the player right now.
-#  sertraline.vals.*        = this item's own values, read as sertraline:vals.attack_damage.
 #
-#  Per attribute, the target's value is read from the same path, and the
-#  conditions in comparable_item decide the result string from the diff:
-#    diff == 0                  -> "equal"
-#    diff >  0                  -> "high"  (or "very_high" when diff > 10)
-#    diff <  0                  -> "low"   (or "very_low" when diff < -10)
+#  The switch format comparable_format routes to comparable_attribute when the
+#  player's loreMode == 0 (toggled via the F-key / offhand_meta_toggle). Each
+#  attribute line reads the CURRENT item's value from the mmo: path (e.g.
+#  mmo:ATTACK_DAMAGE) and the target's value from the SAME path on the equipped
+#  item, then the `simple_example` compare group maps diff = current - compare
+#  to a result string (first matching condition wins, top to bottom):
+#    diff == 0          -> "equal"
+#    diff >  10         -> "very_high"
+#    diff == 10         -> "high"     (only exactly 10 reaches GREATER_THAN 0)
+#    any other diff     -> "very_low" (LESS_THAN 10 catches everything else)
+#  If a side is missing entirely, the LOST/NEW branches fire instead.
 #
-#  Example scenario: with skyline_sword viewable (e.g. as the previewed item)
-#  and a weapon in the player's MAIN_HAND whose attack_damage is 10:
-#    attack_damage  skyline 20 vs hand 10  -> diff 10  -> "high"
-#    attack_speed   skyline  7 vs hand  6  -> diff  1  -> "very_low"
+#  Example: with comparable_sword_2 (attack_damage 10, attack_speed 5) equipped
+#  in the player's MAIN_HAND while comparable_sword (20 / 7) is being rendered:
+#    attack_damage  20 vs 10  -> diff 10  -> "high"
+#    attack_speed    7 vs  5  -> diff  2  -> "very_low"
 # ─────────────────────────────────────────────────────────────
 comparable_sword:
   sertraline:

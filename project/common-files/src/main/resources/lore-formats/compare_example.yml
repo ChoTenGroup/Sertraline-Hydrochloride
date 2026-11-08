@@ -2,7 +2,7 @@ comparable_format:
   mode: switch
   overwriteable-settings:
     overwrite: true
-    visual: true
+    visual: false
     auto-skip-blank: true
     compare-enabled: true
     compare:

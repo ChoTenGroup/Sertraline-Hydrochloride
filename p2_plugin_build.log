@@ -1,0 +1,47 @@
+﻿> Task :plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :plugin:compileKotlin NO-SOURCE
+> Task :plugin:compileJava NO-SOURCE
+> Task :plugin:processResources NO-SOURCE
+> Task :plugin:classes UP-TO-DATE
+> Task :project:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:compileKotlin NO-SOURCE
+> Task :project:compileJava NO-SOURCE
+> Task :project:processResources NO-SOURCE
+> Task :project:classes UP-TO-DATE
+> Task :project:common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:spigot:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:spigot:compileKotlin UP-TO-DATE
+> Task :project:spigot:compileJava NO-SOURCE
+> Task :project:spigot:processResources NO-SOURCE
+> Task :project:spigot:classes UP-TO-DATE
+> Task :project:spigot:compilePaperKotlin UP-TO-DATE
+> Task :project:spigot:compilePaperJava NO-SOURCE
+> Task :project:spigot:processPaperResources NO-SOURCE
+> Task :project:spigot:paperClasses UP-TO-DATE
+> Task :project:spigot:paperPlatformClasses UP-TO-DATE
+> Task :project:common:compileKotlin UP-TO-DATE
+> Task :project:common:compileJava NO-SOURCE
+> Task :project:common:processResources NO-SOURCE
+> Task :project:common:classes UP-TO-DATE
+> Task :project:common-files:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:common-files:compileKotlin NO-SOURCE
+> Task :project:common-files:compileJava NO-SOURCE
+> Task :project:common-files:processResources UP-TO-DATE
+> Task :project:common-files:classes UP-TO-DATE
+> Task :project:premium:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:premium:compileKotlin UP-TO-DATE
+> Task :project:premium:compileJava NO-SOURCE
+> Task :project:premium:processResources NO-SOURCE
+> Task :project:premium:classes UP-TO-DATE
+> Task :plugin:jar
+
+> Task :plugin:taboolibMainTask
+[taboolibMainTask] 3071 classes, 319 resources | ASM: 1769ms (16 threads), Write: 1218ms, Total: 3031ms
+
+> Task :plugin:assemble
+> Task :plugin:check
+> Task :plugin:freeJar
+> Task :plugin:build
+
+BUILD SUCCESSFUL in 20s
+9 actionable tasks: 3 executed, 6 up-to-date

@@ -1,6 +1,6 @@
-package io.github.zzzyyylllty.sertraline.util.dependencies
+﻿package io.github.zzzyyylllty.sertraline.util.dependencies
 
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.item.itemSerializer
 import io.github.zzzyyylllty.sertraline.listener.sertraline.mmoFilter
@@ -61,7 +61,7 @@ object MMOUtil {
     private const val HAND = "hand"
 
     fun mmoAttributeCalculate(
-        item: ModernSItem,
+        item: AbstractSItem,
         playerData: MMOPlayerData,
         defSource: ModifierSource,
         defSlot: EquipmentSlot,

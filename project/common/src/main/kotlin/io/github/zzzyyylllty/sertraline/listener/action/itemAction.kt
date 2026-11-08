@@ -23,6 +23,7 @@ import org.bukkit.event.player.PlayerItemConsumeEvent
 import org.bukkit.event.player.PlayerLoginEvent
 import org.bukkit.event.player.PlayerSwapHandItemsEvent
 import org.bukkit.event.player.PlayerToggleSneakEvent
+import org.bukkit.inventory.EquipmentSlot
 import org.bukkit.inventory.ItemStack
 import taboolib.common.platform.event.SubscribeEvent
 
@@ -44,13 +45,25 @@ data class ThrottleActionParam(
 @SubscribeEvent
 fun onInteract(e: PlayerInteractEvent) {
     val uuid = e.player.uniqueId.toString()
+    // PlayerInteractEvent fires once per hand and `e.item` belongs to the hand of *this* event.
+    // Without the hand check both hands dispatched the same `onClick`/`onRightClick` key, so with
+    // `action.throttle.onClick: 0` (throttling off) one physical right-click ran the whole action
+    // chain twice — and the second run used the off-hand item. Mirror the @main/@off model that
+    // onLogin / onConsume / onMine already use.
+    val handSuffix: String? = when (e.hand) {
+        EquipmentSlot.HAND -> null        // main hand keeps the bare action name (backwards compatible)
+        EquipmentSlot.OFF_HAND -> "off"   // off hand gets an explicit variant
+        else -> return                    // no hand information: nothing item-bound to run
+    }
+    if (handSuffix == "off" && e.item == null) return
+
     val param = ThrottleActionParam(e.player, e, e, e.item)
 
-    throttleAction(ThrottleActionLink(uuid, "onClick"), param)
+    throttleAction(ThrottleActionLink(uuid, "onClick", handSuffix), param)
     if (e.action == Action.RIGHT_CLICK_AIR || e.action == Action.RIGHT_CLICK_BLOCK) {
-        throttleAction(ThrottleActionLink(uuid, "onRightClick"), param)
+        throttleAction(ThrottleActionLink(uuid, "onRightClick", handSuffix), param)
     } else if (e.action == Action.LEFT_CLICK_AIR || e.action == Action.LEFT_CLICK_BLOCK) {
-        throttleAction(ThrottleActionLink(uuid, "onLeftClick"), param)
+        throttleAction(ThrottleActionLink(uuid, "onLeftClick", handSuffix), param)
     }
 }
 

@@ -1,7 +1,7 @@
 package io.github.zzzyyylllty.sertraline.item.process.tag
 
-import io.github.zzzyyylllty.sertraline.Sertraline.config
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.util.replacePlaceholderSafety
 import org.bukkit.entity.Player
@@ -10,7 +10,7 @@ import taboolib.module.ui.type.Linked
 import kotlin.collections.iterator
 
 data class ProcessItemTagData(
-    var item: ModernSItem,
+    var item: AbstractSItem,
     val itemStack: ItemStack?,
     val player: Player?
 )
@@ -27,11 +27,11 @@ class TagProcessorManager {
 
     // Register a processor, using the name as the key for easy management
     fun registerProcessor(name: String, tagAliases: List<String> = listOf(), processor: TagProcessor) {
-        if (config.getBoolean("tags.$name", true)) {
+        if (SertralineSettings.rawBoolean("tags.$name", true)) {
             processors[name] = processor
             aliases[name] = name
             for (alias in tagAliases) {
-                if (config.getBoolean("tags.$alias", true)) aliases[alias] = name
+                if (SertralineSettings.rawBoolean("tags.$alias", true)) aliases[alias] = name
             }
         }
     }
@@ -46,7 +46,7 @@ class TagProcessorManager {
     }
 
     // Run all processors in order
-    fun processItem(itemJson: String, item: ModernSItem,itemStack: ItemStack?, player: Player?): String {
+    fun processItem(itemJson: String, item: AbstractSItem,itemStack: ItemStack?, player: Player?): String {
 //        var itemData = ProcessItemTagData(itemJson, item, itemStack, player, extractPlaceholders(itemJson))
 //        for (processor in processors) {
 //            itemData = processor.value.process(itemData, player)

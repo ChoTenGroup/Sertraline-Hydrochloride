@@ -1,0 +1,102 @@
+# ============================================================
+# 宝石系统示例 Gem system examples
+#
+# 槽位写在物品的 sertraline:gem-slots 下，宝石词条写在宝石物品的 sertraline:gem 下。
+# Sockets are declared under sertraline:gem-slots of the item, gem behaviour
+# under sertraline:gem of the gem item.
+#
+# 镶嵌方式 How to socket:
+#   - 手持宝石点武器 / Hold a gem on the cursor and click the weapon
+#   - /sertralinegem socket <slotId> [gemId]   （gemId 省略时取副手 / falls back to the off hand）
+# 取下 Remove: /sertralinegem unsocket <slotId>
+# 查看 List:   /sertralinegem list
+#
+# 点击镶嵌可以在 config.yml 的 gem.interaction.click 下配置（开关 / 点击方式 / 权限），
+# 也可以在物品、槽位、宝石上用 click: false 单独禁用；命令与 API 不受影响。
+# Click-to-socket is configured under gem.interaction.click in config.yml (enable / types /
+# permission) and can be opted out per item, socket or gem with click: false; commands and
+# API calls are not affected.
+#
+# modify-data 的键必须以「命名空间:路径」结尾（下面两种写法等价）：
+# Keys of modify-data must resolve to a `namespace:path` item data key — both
+# spellings below are equivalent:
+#   sertraline: { vars: { atk: "+15" } }      # 嵌套写法 nested
+#   "sertraline:vars.atk": "+15"              # 扁平写法 flat
+# 值前缀 "+n"/"-n" 表示在现有数值上加减，其他值表示直接设置。
+# A "+n"/"-n" prefix adds to the current value; anything else sets it.
+# ============================================================
+
+gem_example_sword:
+  sertraline:
+    tier: C
+    vars:
+      atk: 100
+    gem-slots:
+      slot_red:
+        name: "<red>Red Socket"
+        desc: "<gray>Can apply a red gem."
+        gem-color: "red"
+      slot_any:
+        name: "<light_purple>Prismatic Socket"
+        desc: "<gray>Accepts any gem color."
+        # gem-color 省略 = 接受任意颜色 omitted = accepts every color
+      # 只能通过命令 / API 镶嵌的槽位
+      # a socket that only commands / the API may fill
+      slot_locked:
+        name: "<gray>Locked Socket"
+        desc: "<gray>Socketed by a blacksmith only."
+        gem-color: ".*"
+        click: false
+  xbuilder:
+    name: "<!i>&cGem Example Sword"
+    material: DIAMOND_SWORD
+    lore: |
+      <!i><gray>Attack: <red>${var:atkAsIn}$
+      <!i>${gem-slot:slot_red}$
+      <!i>${gem-slot:slot_any}$
+      <!i>${gem-slot:slot_locked}$
+
+gem_example_ruby:
+  sertraline:
+    gem:
+      color: red
+      meta:
+        note: "A red gem."
+      modify-data:
+        sertraline:
+          vars:
+            atk: "+15"
+  xbuilder:
+    name: "<!i><red>Ruby Gem"
+    material: RED_DYE
+    lore: |
+      <!i><gray>Socket into a <red>red socket<gray>.
+      <!i><gray>+15 Attack.
+
+gem_example_sapphire:
+  sertraline:
+    gem:
+      color: blue
+      modify-data:
+        "sertraline:vars.atk": "+25"
+  xbuilder:
+    name: "<!i><blue>Sapphire Gem"
+    material: LAPIS_LAZULI
+    lore: |
+      <!i><gray>Socket into a <blue>blue socket<gray>.
+      <!i><gray>+25 Attack.
+
+gem_example_plain:
+  sertraline:
+    gem:
+      color: white
+      # 这颗宝石只能用命令 / API 镶嵌，点击无效
+      # this gem can only be socketed by command / API, not by clicking
+      click: false
+  xbuilder:
+    name: "<!i><white>Plain Gem"
+    material: QUARTZ
+    lore: |
+      <!i><gray>A cosmetic gem: it occupies a socket
+      <!i><gray>but grants no stats.
+      <!i><gray>Must be socketed by a blacksmith.

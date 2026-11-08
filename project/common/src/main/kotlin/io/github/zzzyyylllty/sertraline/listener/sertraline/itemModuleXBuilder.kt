@@ -1,12 +1,9 @@
 package io.github.zzzyyylllty.sertraline.listener.sertraline
 
-import io.github.zzzyyylllty.sertraline.Sertraline.consoleSender
-import io.github.zzzyyylllty.sertraline.Sertraline.mappings
 import io.github.zzzyyylllty.sertraline.config.ConfigUtil
 import io.github.zzzyyylllty.sertraline.event.ItemLoadEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
-import taboolib.platform.BukkitListener.BukkitListener
 
 @SubscribeEvent(priority = EventPriority.LOW)
 fun itemModuleXBuilder(e: ItemLoadEvent) {
@@ -21,5 +18,6 @@ fun itemModuleXBuilder(e: ItemLoadEvent) {
         "$prefix:item-model",
     )
 
-    e.itemData.putAll(c.getFeatures(e.itemKey, e.arguments, features, e.itemData))
+    // Pass the reload candidate context so the first load does not read the (still empty) live mapping table.
+    e.itemData.putAll(c.getFeatures(e.itemKey, e.arguments, features, e.itemData, e.context))
 }

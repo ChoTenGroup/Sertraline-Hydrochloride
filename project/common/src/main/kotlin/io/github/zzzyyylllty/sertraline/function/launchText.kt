@@ -16,14 +16,14 @@ import taboolib.platform.util.asLangText
 // ⬛🟦🟥🟫🟧🟨🟩🟪⬜
 private val characterDrat = """
     ⬜⬜⬜⬜
-    ⬜⬜⬜
+    ⬜⬜�?
     ⬜⬜
 """.trimIndent()
 
 @Awake(LifeCycle.ENABLE)
 fun launchText() {
 
-    val premiumDisplayName = if (VersionHelper().isSertralinePremium) {
+    val premiumDisplayName = if (VersionHelper.isSertralinePremium) {
         "<gradient:yellow:gold>" + console.asLangText("PremiumVersion")
     } else {
         "<gradient:green:aqua>" + console.asLangText("FreeVersion")
@@ -53,7 +53,7 @@ fun launchText() {
     consoleSender.sendStringWithPrefix("<#66bbff>", console.asLangText("Welcome4", "https://github.com/zzzyyylllty/Sertraline-Hydrochloride"))
     consoleSender.sendStringWithPrefix("<#66bbff>", console.asLangText("Welcome5", "https://chotengroup.gitbook.io/sertraline"))
     consoleSender.sendStringAsComponent(" ")
-    if (VersionHelper().isSertralinePremium) consoleSender.sendStringWithPrefix("<gradient:red:yellow:green:aqua:light_purple>", console.asLangText("PremiumVersionWelcome", premiumDisplayName))
+    if (VersionHelper.isSertralinePremium) consoleSender.sendStringWithPrefix("<gradient:red:yellow:green:aqua:light_purple>", console.asLangText("PremiumVersionWelcome", premiumDisplayName))
     consoleSender.sendStringAsComponent(" ")
 
 }

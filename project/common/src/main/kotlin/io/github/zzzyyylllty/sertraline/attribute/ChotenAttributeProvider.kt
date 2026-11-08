@@ -20,8 +20,19 @@ class ChotenAttributeProvider : AttributeProvider {
     private val appliedModifiers = ConcurrentHashMap<UUID, MutableSet<UUID>>()
 
     companion object {
+        /**
+         * Whether the ChoTen attribute API is usable.
+         *
+         * `Bukkit.getPluginManager().getPlugin("ChoTenTech")` only tells us the *plugin* is present;
+         * the API classes are a hard `compileOnly` reference in this file, so a server that ships a
+         * ChoTenTech build without the attribute module would fail with `NoClassDefFoundError` as
+         * soon as [refreshAttributes] runs. Resolve the API class explicitly instead.
+         */
         val available: Boolean by lazy {
-            Bukkit.getPluginManager().getPlugin("ChoTenTech") != null
+            if (Bukkit.getPluginManager().getPlugin("ChoTenTech") == null) false
+            else runCatching {
+                Class.forName("io.github.zzzyyylllty.chotentech.attribute.api.ChoTenAttributeAPI", false, javaClass.classLoader)
+            }.isSuccess
         }
 
         private val chotenFilter = setOf("id", "source", "slot", "allowed")
@@ -53,7 +64,14 @@ class ChotenAttributeProvider : AttributeProvider {
 
         private fun solveModifier(key: Any?, value: Any?): ChotenAttributeValue {
             val keyStr = key.toString()
-            val str = value.toString()
+            val str = value.toString().trim()
+
+            // `str.last()` threw NoSuchElementException on an empty config value ("atk: ''"),
+            // which aborted the whole provider run and left every modifier of that refresh removed.
+            if (str.isEmpty()) {
+                devLog("Choten modifier '$keyStr' has an empty value; treated as +0.0 ADD")
+                return ChotenAttributeValue(keyStr)
+            }
 
             val modifierType = when (str.last()) {
                 '%', 'c', 'm' -> ModifierType.PERCENT
@@ -130,7 +148,10 @@ class ChotenAttributeProvider : AttributeProvider {
 
             chotenMutable.forEach { (key, value) ->
                 val atb = solveModifier(key, value)
-                val modifierUuid = (sItem.key + "_" + slot + "_" + atb.atbID).generateUUID()
+                // 必须用跨来源唯一的 storageKey，不能用裸 key：
+                // 外部/原版物品的裸 key 与 Sertraline 物品同名是常态，共用 UUID 会让
+                // addModifier 后者覆盖前者，玩家属性静默变少
+                val modifierUuid = (sItem.storageKey + "_" + slot + "_" + atb.atbID).generateUUID()
 
                 val modifier = AttributeModifier(
                     modifierUuid,
@@ -151,5 +172,17 @@ class ChotenAttributeProvider : AttributeProvider {
         api.updatePlayerAttributes(player)
 
         devLog("ChotenAttribute refresh complete for ${player.name}, applied ${newModifiers.size} modifiers")
+    }
+
+    /**
+     * Forgets the modifier ids tracked for [playerUuid].
+     *
+     * `appliedModifiers` was append-only: every player that ever joined kept a UUID set forever,
+     * even after quitting. Modifiers themselves live in ChoTen's own player data, so the entry is
+     * only needed while the player is online these days — call this on quit (or after a full
+     * removal) to keep the map bounded.
+     */
+    fun forget(playerUuid: UUID) {
+        appliedModifiers.remove(playerUuid)
     }
 }

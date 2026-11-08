@@ -27,8 +27,8 @@ fun getFeatureType(e: FeatureLoadEvent) {
         }
     }
 
-    // Find the corresponding type
-    val type = types[typeId]
+    // Find the corresponding type (context 模式优先候选表，未命中回读 live)
+    val type = e.context?.let { it.types[typeId] ?: it.liveTypes[typeId] } ?: types[typeId]
     if (type == null) {
         warningS("Type '$typeId' not found for item ${e.sItemKey}")
         // Return the original value and let default handling continue
@@ -39,9 +39,11 @@ fun getFeatureType(e: FeatureLoadEvent) {
     // Set the result to the type ID (string)
     e.result = typeId
 
-    // Also store the type reference in itemCache
-    val cache = io.github.zzzyyylllty.sertraline.Sertraline.itemCache[e.sItemKey]?.toMutableMap() ?: mutableMapOf()
+    // Also store the type reference in itemCache（context 模式写候选，发布时合并）
+    val cacheSink: MutableMap<String, Map<String, Any?>> =
+        e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
+    val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()
     cache["type"] = type
     cache["typeId"] = typeId
-    e.sItemKey?.let { io.github.zzzyyylllty.sertraline.Sertraline.itemCache[it] = cache }
+    e.sItemKey?.let { cacheSink[it] = cache }
 }

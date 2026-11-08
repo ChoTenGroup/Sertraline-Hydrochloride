@@ -1,0 +1,4 @@
+﻿Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :project:common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:spigot:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :project:spigot:compileKotlin

@@ -1,11 +1,10 @@
 package io.github.zzzyyylllty.sertraline.listener
 
 import io.github.zzzyyylllty.sertraline.compat.PaperEventHooks
-import io.github.zzzyyylllty.sertraline.listener.attribute.debounceRefreshStat
 import io.github.zzzyyylllty.sertraline.listener.sertraline.checkItemForBlock
+import io.github.zzzyyylllty.sertraline.listener.update.handleArmorSlotChanged
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
-import taboolib.common.platform.function.submitAsync
 
 /**
  * Paper-only event bridge.
@@ -16,7 +15,8 @@ object PaperEventBridge {
     val hooks: PaperEventHooks = object : PaperEventHooks {
 
         override fun onArmorChange(player: Player) {
-            submitAsync { debounceRefreshStat(player) }
+            // attribute refresh + armor item update (single entry point, shared with Spigot polling)
+            handleArmorSlotChanged(player)
         }
 
         override fun onPlayerTrade(ingredients: List<ItemStack>): Boolean {

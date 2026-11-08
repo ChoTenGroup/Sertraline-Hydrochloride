@@ -4,6 +4,10 @@
 # Reload with /sertraline reload to apply changes
 # ==================================================
 
+# 配置文件结构版本，请勿手动修改
+# Config file schema version, do not modify
+config-version: 1
+
 # 使用 Sparrow MiniMessage 快速解析引擎替代原版 MiniMessage（adventure），
 # 对物品名 / Lore 等高频解析场景有显著性能提升。
 # Use the Sparrow MiniMessage engine to replace the standard MiniMessage (adventure)

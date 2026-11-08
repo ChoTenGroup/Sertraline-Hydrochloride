@@ -1,0 +1,6 @@
+﻿--- sertralinedebug processors
+[xbuilder, sertraline, custom_data, chotenatb, chotenatb_complex, mmo, minecraft, common]
+--- sertralinedebug tagProcessors
+[papi, sertraline, nbt, gem-slot]
+--- sertralinedebug getItemIDs
+[block_wand, apprentice_sword, book_of_multi_language, magic_staff, sertraline_pills_42, star_of_recall, comparable_sword_2, precision_blade, flame_sword, sword_of_counter, shadow_blade, sword_of_soulbound, titan_sword, comparable_sword, sword_of_glasnost, numbered_token, test_choten_sword, sword_of_ultimate_damage, wild_guardian_sword, light_dagger, sertraline_pills_14, speed_potion_cookie, sword_of_eternal_frozen, blade_of_mythic, hunter_knife, knight_longsword, test_lore_toggle, ultimate_pickaxe, sword_of_skyline, bagged_crystal_sugar, bagged_zero_calorie_sugar, echo_helmet, doe_card, forest_guardian_sword]

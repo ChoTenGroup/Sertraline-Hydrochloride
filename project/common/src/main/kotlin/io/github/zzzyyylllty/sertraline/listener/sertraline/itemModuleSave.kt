@@ -1,7 +1,7 @@
 package io.github.zzzyyylllty.sertraline.listener.sertraline
 
 import io.github.zzzyyylllty.sertraline.Sertraline.itemMap
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.SItemFactory
 import io.github.zzzyyylllty.sertraline.event.ItemLoadEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
@@ -23,11 +23,14 @@ fun itemModuleSave(e: ItemLoadEvent) {
             data[major] = majormap
         } else data[location] = entry.value
     }
-    val sItem = ModernSItem(
-        e.itemKey,
-        data = data as LinkedHashMap<*,*> as LinkedHashMap<String, Any?>,
-        config = e.arguments as LinkedHashMap<*,*> as LinkedHashMap<String, Any?>
+    // 统一经工厂创建，保证 shouldAdapt 等运行时状态由工厂赋值
+    val sItem = SItemFactory.sertraline(
+        key = e.itemKey ?: return,
+        data = data as LinkedHashMap<*, *> as LinkedHashMap<String, Any?>,
+        config = e.arguments as LinkedHashMap<*, *> as LinkedHashMap<String, Any?>
     )
     itemDebugger(e, sItem)
-    e.itemKey?.let { itemMap[it] = sItem }
+    // context 模式写 reload 候选表；null 为兼容入口，写 live 表（旧语义）
+    val sink = e.context?.items ?: itemMap
+    e.itemKey?.let { sink[it] = sItem }
 }

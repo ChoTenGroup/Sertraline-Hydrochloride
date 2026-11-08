@@ -1,10 +1,17 @@
 package io.github.zzzyyylllty.sertraline.api
 
+import io.github.zzzyyylllty.embiancomponent.tools.getComponentsJavaNMS
+import io.github.zzzyyylllty.embiancomponent.tools.getComponentsNMS
 import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.config.TemplateManager
+import io.github.zzzyyylllty.sertraline.config.loadItemFile as loadSertralineItemFile
 import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.componentHelper
 import io.github.zzzyyylllty.sertraline.function.data.getSertralineId
 import io.github.zzzyyylllty.sertraline.item.itemSerializer
+import io.github.zzzyyylllty.sertraline.listener.sertraline.builder.ExternalItemProcessors
+import io.github.zzzyyylllty.sertraline.listener.sertraline.builder.ItemProcessor
+import io.github.zzzyyylllty.sertraline.listener.sertraline.builder.ItemProcessorManager
 import io.github.zzzyyylllty.sertraline.item.rebuild
 import io.github.zzzyyylllty.sertraline.item.rebuildLore
 import io.github.zzzyyylllty.sertraline.item.rebuildName
@@ -19,33 +26,120 @@ import org.bukkit.entity.Player
 import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
 import taboolib.module.nms.getItemTag
+import taboolib.platform.util.serializeToByteArray
+import java.io.File
 
 public class SertralineAPIImpl : SertralineAPI {
+}
+
+public object SertralineApiVersionN {
+    const val MAJOR = 3
+    const val MINOR = 13
+    const val PATCH = 0
+    const val FIX = 2
+    val SERTRALINE_API_VER = SertralineApiVersion(MAJOR, MINOR, PATCH, FIX)
+}
+
+public data class SertralineApiVersion(
+    val major: Int,
+    val minor: Int,
+    val patch: Int,
+    val fix: Int = 0,
+) : Comparable<SertralineApiVersion> {
+    override fun compareTo(other: SertralineApiVersion): Int =
+        compareValuesBy(this, other, { it.major }, { it.minor }, { it.patch }, { it.fix })
+
+    override fun toString() = "$major.$minor.$patch.$fix"
 }
 
 public interface SertralineAPI {
 
     // ==================== Item Query & Build ====================
 
+    public val version: SertralineApiVersion get() = SertralineApiVersionN.SERTRALINE_API_VER
+
+    /**
+     * check if the itemstack is fully same as minecraft vanilla materials
+     * */
+    fun isSameAsMinecraftMaterial(item: ItemStack): Boolean {
+        val vanillaItem = ItemStack(item.type)
+        item.serialize()
+        return item.getComponentsNMS() == vanillaItem.getComponentsNMS()
+    }
+
+    /**
+     * itemmanager
+     */
+    public fun itemManager(): ItemProcessorManager = Sertraline.itemManager
+
+    /**
+     * Registers an item segment processor that survives Sertraline reloads.
+     *
+     * Use this instead of `itemManager().registerProcessor(...)`: the raw manager drops every
+     * processor on `/sreload` (only built-in adapters are re-added), which silently disables
+     * plugin-provided segments such as `itemdef` / `model` / `mag` / `ammo`.
+     *
+     * The processor runs only for items whose raw config contains [name].
+     * Registration is idempotent — re-registering the same name replaces the previous processor.
+     */
+    public fun registerItemProcessor(name: String, processor: ItemProcessor) {
+        ExternalItemProcessors.register(name, processor)
+    }
+
+    /**
+     * Segments currently registered through [registerItemProcessor] (debugging aid).
+     */
+    public fun registeredItemProcessors(): List<String> = ExternalItemProcessors.names()
+
+    /**
+     * Load item definitions from one YAML/JSON file through Sertraline's normal item parser.
+     * ItemLoadEvent processors (including plugin-provided item segments) run exactly as they do
+     * for workspace files. This API publishes directly to the live persistent item registry.
+     *
+     * Call after Sertraline has completed startup configuration loading and after all item
+     * processors have been registered. Re-loading the same file is idempotent by item ID.
+     *
+     * @return true if the file was accepted and parsed; false if unsupported, empty, or invalid.
+     */
+    public fun loadItemsFromFile(file: File): Boolean {
+        if (!file.isFile || !file.canRead()) return false
+        val extension = file.extension.lowercase()
+        if (extension !in setOf("yml", "yaml", "json", "toml", "tml")) return false
+        return loadSertralineItemFile(file, Regex(".*"))
+    }
+
     /**
      * Get Sertraline Item Object
      */
-    public fun getItem(s: String): ModernSItem? {
-        return Sertraline.itemMap[s]
+    @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI.getItem"))
+     public fun getItem(s: String): ModernSItem? {
+        // 注册表已泛化为 AbstractSItem；旧签名保持 JVM ABI 不变，非 Sertraline 物品返回 null
+        return Sertraline.itemMap[s] as? ModernSItem
     }
 
     /**
      * Get Sertraline Item Object from ItemStack
      */
-    public fun getItemFromStack(item: ItemStack): ModernSItem? {
-        return Sertraline.itemMap[item.getSertralineId()]
+    @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI.getItemFromStack"))
+     public fun getItemFromStack(item: ItemStack): ModernSItem? {
+        return Sertraline.itemMap[item.getSertralineId()] as? ModernSItem
     }
 
     /**
-     * Get all registered items
+     * Get all registered items.
+     * Returns an immutable copy of the current registry — mutations of the returned
+     * map have no effect on the live registry, and concurrent reloads never surface
+     * as partial views in the returned snapshot.
+     *
+     * 仅包含 Sertraline 物品；其他来源请使用 [SertralineItemAPI]。
      */
-    public fun getAllItems(): Map<String, ModernSItem> {
-        return Sertraline.itemMap
+    @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI.getAllItems"))
+     public fun getAllItems(): Map<String, ModernSItem> {
+        val snapshot = java.util.HashMap<String, ModernSItem>()
+        for ((key, value) in Sertraline.itemMap) {
+            if (value is ModernSItem) snapshot[key] = value
+        }
+        return java.util.Collections.unmodifiableMap(snapshot)
     }
 
     /**
@@ -87,7 +181,8 @@ public interface SertralineAPI {
      * @param [valId] Val key
      * @return The val value, or null if not found
      */
-    public fun getVal(sItem: ModernSItem, valId: String): Any? {
+    @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI"))
+     public fun getVal(sItem: ModernSItem, valId: String): Any? {
         return (sItem.getDeepData("sertraline:vals") as? Map<String, Any?>)?.get(valId)
     }
 
@@ -101,7 +196,7 @@ public interface SertralineAPI {
      */
     public fun getValItemStack(itemStack: ItemStack, valId: String, player: Player? = null): Any? {
         val sItem = itemSerializer(itemStack, player) ?: return null
-        return getVal(sItem, valId)
+        return getVal(sItem as? ModernSItem ?: return null, valId)
     }
 
     /**
@@ -290,8 +385,9 @@ public interface SertralineAPI {
     /**
      * Get a public item
      */
-    fun getPublicItem(id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem? {
-        return Sertraline.manager.public.getItem(id, sub)
+    @Deprecated("Use SertralineItemAPI instead")
+     fun getPublicItem(id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem? {
+        return Sertraline.manager.public.getItem(id, sub) as? ModernSItem
     }
 
     /**
@@ -304,8 +400,9 @@ public interface SertralineAPI {
     /**
      * Get all public items by sub-type
      */
-    fun getAllPublicItems(sub: SubManagerType): Map<String, ModernSItem> {
-        return Sertraline.manager.public.getAll(sub)
+    @Deprecated("Use SertralineItemAPI instead")
+     fun getAllPublicItems(sub: SubManagerType): Map<String, ModernSItem> {
+        return Sertraline.manager.public.getAll(sub).filterValues { it is ModernSItem }.mapValues { it.value as ModernSItem }
     }
 
     // ---- Private Items ----
@@ -338,25 +435,97 @@ public interface SertralineAPI {
         return Sertraline.manager.privateManager.getAll(uuid, sub)
     }
 
+    /**
+     * Update a private item in the selected manager.
+     * Persistent updates are written back to the private-item database.
+     * @return The previous item, or null if the ID was not registered
+     */
+    @Deprecated("Use SertralineItemAPI instead")
+    fun updateSItem(
+        uuid: String,
+        id: String,
+        item: ModernSItem,
+        sub: SubManagerType = SubManagerType.PERSISTENT
+    ): ModernSItem? {
+        return Sertraline.manager.privateManager.updateItem(uuid, id, item, sub)
+    }
+
+    /**
+     * Update a private item using the item's key as its ID.
+     * @return The previous item, or null if the ID was not registered
+     */
+    @Deprecated("Use SertralineItemAPI instead")
+    fun updateSItem(
+        uuid: String,
+        item: ModernSItem,
+        sub: SubManagerType = SubManagerType.PERSISTENT
+    ): ModernSItem? {
+        return updateSItem(uuid, item.key, item, sub)
+    }
+
     // ---- General Management ----
 
     /**
      * Register an item directly into itemMap (public-persistent)
      */
+    @Deprecated("Use SertralineItemAPI instead")
     fun registerItem(id: String, item: ModernSItem) {
         Sertraline.itemMap[id] = item
     }
 
     /**
+     * Update an item directly in itemMap (public-persistent).
+     *
+     * ⚠ Overload trap: `updateSItem("uuid-or-id", item)` binds to **this** method and writes to the
+     * public registry, not to the private-item database. For private items use
+     * [updateSItem]`(uuid, id, item, sub)` — three or four arguments. The two-argument and
+     * three-argument `(uuid, item, sub)` forms are easy to confuse because both take a [String]
+     * first, so the private-item variant is spelled out here deliberately.
+     * @return The previous item, or null if the ID was not registered
+     */
+    @Deprecated("Use SertralineItemAPI instead")
+    fun updateSItem(id: String, item: ModernSItem): ModernSItem? {
+        return Sertraline.itemMap.put(id, item) as? ModernSItem
+    }
+
+    /**
+     * Update an item directly in itemMap using the item's key as its ID.
+     * @return The previous item, or null if the ID was not registered
+     */
+    @Deprecated("Use SertralineItemAPI instead")
+    fun updateSItem(item: ModernSItem): ModernSItem? {
+        return updateSItem(item.key, item)
+    }
+
+    /**
+     * Update a **private** item, unambiguous alias of [updateSItem]`(uuid, id, item, sub)`.
+     *
+     * Provided so callers never hit the `String`-first overload trap above by accident.
+     */
+    @Deprecated("Use SertralineItemAPI instead")
+    fun updatePrivateItem(
+        uuid: String,
+        id: String,
+        item: ModernSItem,
+        sub: SubManagerType = SubManagerType.PERSISTENT
+    ): ModernSItem? = Sertraline.manager.privateManager.updateItem(uuid, id, item, sub)
+
+    /**
      * Remove an item from itemMap
      * @return The removed item, or null if not found
      */
+    @Deprecated("Use SertralineItemAPI instead")
     fun unregisterItem(id: String): ModernSItem? {
-        return Sertraline.itemMap.remove(id)
+        return Sertraline.itemMap.remove(id) as? ModernSItem
     }
 
     /**
      * Get total item count in itemMap
+     *
+     * Counts **all** registered sources (Sertraline + Minecraft + external). That is deliberately
+     * wider than the deprecated [getAllItems], which only returns Sertraline items; use
+     * [SertralineItemAPI.getAllItems]`.size` (or `getSertralineItems().size`) when the two numbers
+     * are expected to agree.
      */
     fun getItemCount(): Int = Sertraline.itemMap.size
 

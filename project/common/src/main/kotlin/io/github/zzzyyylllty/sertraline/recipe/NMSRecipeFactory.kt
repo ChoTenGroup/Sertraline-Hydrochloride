@@ -28,6 +28,20 @@ object NMSRecipeFactory {
 
     private const val NAMESPACE = "sertraline"
 
+    /**
+     * Normalizes a recipe id into the path component of its `NamespacedKey` / resource location.
+     *
+     * Must be identical everywhere a recipe path is derived. `SimpleRecipeHelper.registerRecipe`
+     * already lower-cased and sanitized the path, while [register] used the raw id and
+     * `unregisterAll` used the normalized `NamespacedKey` — so an id containing uppercase letters,
+     * spaces or any other character outside `[a-z0-9/._-]` was registered under one key and
+     * unregistered under a different one, never actually being removed on reload.
+     */
+    fun normalizeRecipePath(raw: String): String =
+        raw.removePrefix("$NAMESPACE:")
+            .lowercase()
+            .replace(Regex("[^a-z0-9/._-]"), "_")
+
     // ==================== Version detection ====================
 
     enum class MinecraftVersion { v1_21_4, v26_1_2 }
@@ -218,20 +232,20 @@ object NMSRecipeFactory {
     }
 
     private fun resolveItemStacks(itemId: String, amount: Int): List<ItemStack> {
-        val (namespace, key) = parseId(itemId)
-        return when {
-            namespace == "sertraline" -> {
-                val sItem = Sertraline.itemMap[key] ?: return emptyList()
-                val stack = sertralineItemBuilder(key, null) ?: return emptyList()
+        val ref = resolveRecipeReference(itemId) ?: return emptyList()
+        return when (ref.kind) {
+            RecipeSourceKind.SERTRALINE -> {
+                Sertraline.itemMap[ref.id] ?: return emptyList()
+                val stack = sertralineItemBuilder(ref.id, null) ?: return emptyList()
                 stack.amount = amount
                 listOf(stack)
             }
-            namespace == "minecraft" || namespace == "vanilla" -> {
-                val mat = Material.matchMaterial(key) ?: return emptyList()
+            RecipeSourceKind.MINECRAFT -> {
+                val mat = ref.material ?: return emptyList()
                 listOf(ItemStack(mat, amount))
             }
-            else -> {
-                val stack = ExternalItemHelper.buildNoPlayer(namespace, key) ?: return emptyList()
+            RecipeSourceKind.EXTERNAL -> {
+                val stack = ExternalItemHelper.buildNoPlayer(ref.provider, ref.id) ?: return emptyList()
                 stack.amount = amount
                 listOf(stack)
             }
@@ -355,7 +369,10 @@ object NMSRecipeFactory {
             ?: throw IllegalStateException("Cannot find CraftPlayer.getHandle()")
     }
     private val methodGetRecipeBookServer by lazy {
-        getDeclaredMethodCompat(clazzEntityPlayer, listOf("getRecipeBookServer", "J"))
+        // Constrain by return type: without it the signature fallback in getDeclaredMethodCompat
+        // can match an unrelated no-arg method on ServerPlayer, whose return value may be null
+        // (observed on 1.21.11: NPE "Cannot invoke Object.getClass() because o is null" at the add() invoke)
+        getDeclaredMethodCompat(clazzEntityPlayer, listOf("getRecipeBookServer", "J"), clazzRecipeBookServer)
     }
     private val methodRecipeManagerByKey by lazy {
         getDeclaredMethodCompat(clazzRecipeManager, listOf("byKey", "b"), null, clazzResourceKey)
@@ -371,6 +388,28 @@ object NMSRecipeFactory {
     }
 
     /**
+     * Resolves the player's recipe book server.
+     * Prefers the accessor by name; if it is missing (renamed/relocated on some versions) or returns null,
+     * falls back to a name-agnostic field lookup by type on the ServerPlayer hierarchy.
+     */
+    private fun resolveRecipeBookServer(entityPlayer: Any): Any {
+        val byMethod = runCatching { methodGetRecipeBookServer.invoke(entityPlayer) }.getOrNull()
+        if (byMethod != null) return byMethod
+        return runCatching {
+            var clazz: Class<*>? = clazzEntityPlayer
+            while (clazz != null) {
+                val field = clazz.declaredFields.firstOrNull { clazzRecipeBookServer.isAssignableFrom(it.type) }
+                if (field != null) {
+                    field.isAccessible = true
+                    return@runCatching field.get(entityPlayer)
+                }
+                clazz = clazz.superclass
+            }
+            throw NoSuchFieldException("recipe book server field in ${clazzEntityPlayer.name} hierarchy")
+        }.getOrNull() ?: throw IllegalStateException("Cannot resolve ServerPlayer recipe book server")
+    }
+
+    /**
      * Unlocks the given recipes in a player's recipe book (same path as advancement unlock).
      * Makes recipes visible on player join without requiring a prior craft.
      * @return the number of recipes successfully unlocked and sent
@@ -379,7 +418,7 @@ object NMSRecipeFactory {
         if (recipeIds.isEmpty()) return 0
         return try {
             val entityPlayer = methodGetHandle.invoke(player)
-            val recipeBook = methodGetRecipeBookServer.invoke(entityPlayer)
+            val recipeBook = resolveRecipeBookServer(entityPlayer)
             val manager = methodGetRecipeManager.invoke(methodGetServer.invoke(null))
             val holders = ArrayList<Any>(recipeIds.size)
             for (id in recipeIds) {
@@ -393,6 +432,9 @@ object NMSRecipeFactory {
             methodRecipeBookAdd.invoke(recipeBook, holders, entityPlayer) as Int
         } catch (e: Exception) {
             warningS("Failed to unlock recipe book for ${player.name}: ${e.message}")
+            // Reflection/NMS internals: message alone is insufficient (e.g. "Cannot invoke ... because "o" is null");
+            // the stack trace is required to locate the failing NMS call
+            e.printStackTrace()
             0
         }
     }
@@ -455,7 +497,10 @@ object NMSRecipeFactory {
 
     fun register(recipeData: RecipeData): Boolean {
         return try {
-            val path = recipeData.id.removePrefix("$NAMESPACE:")
+            // Same normalization as SimpleRecipeHelper.registerRecipe(): the key stored in
+            // registeredRecipes is derived from the normalized path, and unregisterAll passes that
+            // key back to unregister(), so both sides must agree.
+            val path = normalizeRecipePath(recipeData.id)
             val recipeKey = createRecipeResourceKey(NAMESPACE, path)
             val recipeObj = buildNMSRecipe(recipeData) ?: return false
             val holder = constructorRecipeHolder.newInstance(recipeKey, recipeObj)
@@ -766,18 +811,16 @@ object NMSRecipeFactory {
     }
 
     private fun buildBukkitResult(result: RecipeResult): ItemStack? {
-        val (namespace, key) = parseId(result.itemId)
-        return when {
-            namespace == "sertraline" -> {
-                sertralineItemBuilder(key, null)?.apply { amount = result.count }
-            }
-            namespace == "minecraft" || namespace == "vanilla" -> {
-                val mat = Material.matchMaterial(key) ?: return null
+        val ref = resolveRecipeReference(result.itemId) ?: return null
+        return when (ref.kind) {
+            RecipeSourceKind.SERTRALINE ->
+                sertralineItemBuilder(ref.id, null)?.apply { amount = result.count }
+            RecipeSourceKind.MINECRAFT -> {
+                val mat = ref.material ?: return null
                 ItemStack(mat, result.count)
             }
-            else -> {
-                ExternalItemHelper.buildNoPlayer(namespace, key)?.apply { amount = result.count }
-            }
+            RecipeSourceKind.EXTERNAL ->
+                ExternalItemHelper.buildNoPlayer(ref.provider, ref.id)?.apply { amount = result.count }
         }
     }
 }

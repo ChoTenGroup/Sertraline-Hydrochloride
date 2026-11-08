@@ -1,7 +1,7 @@
-package io.github.zzzyyylllty.sertraline.util.loreformat
+﻿package io.github.zzzyyylllty.sertraline.util.loreformat
 
 import io.github.zzzyyylllty.sertraline.Sertraline
-import io.github.zzzyyylllty.sertraline.Sertraline.config
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.Sertraline.loreFormats
 import io.github.zzzyyylllty.sertraline.Sertraline.tiers
 import io.github.zzzyyylllty.sertraline.Sertraline.types
@@ -25,7 +25,7 @@ import io.github.zzzyyylllty.sertraline.data.DataCompareGroup
 import io.github.zzzyyylllty.sertraline.data.LineMode.*
 import io.github.zzzyyylllty.sertraline.data.LoreFormat
 import io.github.zzzyyylllty.sertraline.data.LoreSetting
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
+import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.data.ResultLimit
 import io.github.zzzyyylllty.sertraline.data.ScriptCompareGroup
 import io.github.zzzyyylllty.sertraline.data.SwitchableLoreFormat
@@ -52,13 +52,16 @@ import taboolib.platform.compat.replacePlaceholder
 import javax.script.SimpleBindings
 
 
-fun handleLoreFormat(item: ModernSItem, player: Player?, orgLore: List<Component>?, isVisual: Boolean = true, currentItem: ItemStack? = null): List<Component>? {
-    val loreFormat = loreFormats[item.getDeepData("sertraline:lore-format")?.toString()] ?: return null
+fun handleLoreFormat(item: AbstractSItem, player: Player?, orgLore: List<Component>?, isVisual: Boolean = true, currentItem: ItemStack? = null): List<Component>? {
+    // getDeepData returns null when the item has no sertraline:lore-format entry; passing null to
+    // ConcurrentHashMap.get would throw NPE ("Cannot invoke Object.hashCode() because key is null")
+    val loreFormatKey = item.getDeepData("sertraline:lore-format")?.toString() ?: return null
+    val loreFormat = loreFormats[loreFormatKey] ?: return null
     return applyLoreFormat(item, player, orgLore, loreFormat, isVisual, currentItem)
 }
 
 internal fun applyLoreFormat(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     orgLore: List<Component>?,
     loreFormat: AbstractLoreFormat,
@@ -70,7 +73,7 @@ internal fun applyLoreFormat(
     return applyPlainLoreFormat(item, player, orgLore, effective, isVisual, targetCache, currentItem)
 }
 
-private fun resolveEffectiveFormat(item: ModernSItem, player: Player?, fmt: AbstractLoreFormat): LoreFormat? {
+private fun resolveEffectiveFormat(item: AbstractSItem, player: Player?, fmt: AbstractLoreFormat): LoreFormat? {
     return when (fmt) {
         is LoreFormat -> fmt
         is SwitchableLoreFormat -> {
@@ -104,13 +107,19 @@ private fun resolveEffectiveFormat(item: ModernSItem, player: Player?, fmt: Abst
 private fun newScriptBindings(item: Any?, player: Player?): SimpleBindings {
     // Snapshot the current defaultData once per invocation. The defaultData reference
     // can be swapped on reload; a snapshot avoids coupling to a concurrently-mutated map.
-    val bindings = SimpleBindings(defaultData)
+    //
+    // The copy is mandatory, not an optimisation: SimpleBindings uses the map we hand it as its
+    // BACKING store, so passing defaultData directly means every bindings[...] = ... below writes
+    // into the shared global table (cross-contaminating concurrent async item builds), and passing
+    // an unmodifiable view of it makes those writes throw UnsupportedOperationException — which
+    // aborts the whole item build, leaving e.g. the item explorer GUI completely empty.
+    val bindings = SimpleBindings(LinkedHashMap(defaultData))
     bindings["player"] = player
     bindings["sItem"] = item
     return bindings
 }
 
-private fun resolveSwitchTarget(sw: SwitchableLoreFormat, item: ModernSItem, player: Player?): AbstractLoreFormat? {
+private fun resolveSwitchTarget(sw: SwitchableLoreFormat, item: AbstractSItem, player: Player?): AbstractLoreFormat? {
     val bindings = newScriptBindings(item, player)
 
     for ((name, script) in sw.preVariables) {
@@ -134,7 +143,7 @@ private fun resolveSwitchTarget(sw: SwitchableLoreFormat, item: ModernSItem, pla
 }
 
 private fun applyPlainLoreFormat(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     orgLore: List<Component>?,
     loreFormat: LoreFormat,
@@ -177,8 +186,8 @@ private fun applyPlainLoreFormat(
     }
 }
 
-/** The resolved comparison target: the ModernSItem identity plus the physical ItemStack it was found with. */
-data class ResolvedCompareTarget(val sItem: ModernSItem, val itemStack: ItemStack)
+/** The resolved comparison target: the AbstractSItem identity plus the physical ItemStack it was found with. */
+data class ResolvedCompareTarget(val sItem: AbstractSItem, val itemStack: ItemStack)
 
 // ═══════════════════════════════════════════════════════════════
 //  Compare resolution
@@ -194,20 +203,21 @@ data class ResolvedCompareTarget(val sItem: ModernSItem, val itemStack: ItemStac
  *   - player       the player viewing the item (may be null)
  *   - currentItem  the current item as an ItemStack (the actual physical item)
  *   - compareItem  the target item as an ItemStack (the actual equipped item; may be null)
- *   - currentSItem the current item as a ModernSItem (for getDeepData / .key etc.)
- *   - compareSItem the target item as a ModernSItem (may be null)
+ *   - currentSItem the current item as a AbstractSItem (for getDeepData / .key etc.)
+ *   - compareSItem the target item as a AbstractSItem (may be null)
  * plus every global JS helper from `defaultData` (ItemStackUtil, PlayerUtil, ...).
  */
 private fun compareFilterDenied(
     target: CompareTarget?,
     player: Player?,
-    currentSItem: ModernSItem,
+    currentSItem: AbstractSItem,
     currentItem: ItemStack?,
-    compareSItem: ModernSItem?,
+    compareSItem: AbstractSItem?,
     compareItem: ItemStack?,
 ): Boolean {
     val filter = target?.filter ?: return false
-    val bindings = SimpleBindings(defaultData)
+    // Copy: SimpleBindings treats the supplied map as its backing store (see newScriptBindings).
+    val bindings = SimpleBindings(LinkedHashMap(defaultData))
     bindings["player"] = player
     bindings["currentSItem"] = currentSItem
     bindings["currentItem"] = currentItem
@@ -248,7 +258,7 @@ private fun compareFilterDenied(
  * or null if no compare applies.
  */
 private fun resolveCompareContent(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     element: AbstractLoreElement,
     settings: LoreSetting,
@@ -344,12 +354,12 @@ private fun resolveCompareContent(
     return Pair(fullyProcessed, differentValue)
 }
 
-private fun resolveNumericValue(item: ModernSItem, path: String): Double? {
+private fun resolveNumericValue(item: AbstractSItem, path: String): Double? {
     return item.getDeepData(path)?.toString()?.toDoubleOrNull()
 }
 
 private fun resolveTargetItem(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     target: CompareTarget?,
     cache: MutableMap<CompareTarget, ResolvedCompareTarget?>? = null,
@@ -366,7 +376,7 @@ private fun resolveTargetItem(
 /**
  * Internal implementation of target item resolution (no cache).
  */
-private fun resolveTargetItemImpl(item: ModernSItem, player: Player?, target: CompareTarget): ResolvedCompareTarget? {
+private fun resolveTargetItemImpl(item: AbstractSItem, player: Player?, target: CompareTarget): ResolvedCompareTarget? {
     for (whenEntry in target.whens) {
         when (whenEntry) {
             is CompareTargetFixedPath -> {
@@ -439,7 +449,7 @@ private fun equipmentItem(eq: EntityEquipment, slot: EquipmentSlot): ItemStack? 
  * The caller's [CompareTargetEquipmentSlot] filter then validates whether that slot
  * is in the allowed list.
  */
-private fun findEquipmentSlot(player: Player, item: ModernSItem): EquipmentSlot? {
+private fun findEquipmentSlot(player: Player, item: AbstractSItem): EquipmentSlot? {
     val eq = player.equipment ?: return null
     for (slot in EquipmentSlot.entries) {
         val slotItem = equipmentItem(eq, slot) ?: continue
@@ -524,7 +534,7 @@ private fun matchesCompare(differentValue: Double, cond: DataCompareCondition): 
 }
 
 private fun evaluateScriptCompare(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     currentValue: Double?,
     compareValue: Double?,
@@ -606,7 +616,7 @@ private val VAL_PLACEHOLDER_REGEX = Regex("\\{val:([^}]+)}")
 private val VAR_PLACEHOLDER_REGEX = Regex("\\{var:([^}]+)}")
 private val CONTEXT_PLACEHOLDER_REGEX = Regex("\\{context:([^}]+)}")
 
-fun Any?.performNormalPlaceholders(content: String, player: Player?, sItem: ModernSItem, skipGeneralPlaceholders: Boolean = false): String {
+fun Any?.performNormalPlaceholders(content: String, player: Player?, sItem: AbstractSItem, skipGeneralPlaceholders: Boolean = false): String {
     // Fast-path: no brace patterns at all, nothing to replace
     if (!content.contains('{')) return content
 
@@ -617,8 +627,8 @@ fun Any?.performNormalPlaceholders(content: String, player: Player?, sItem: Mode
     var content = NORMAL_PLACEHOLDER_REGEX.replace(content) { match ->
         val key = match.groupValues[1].lowercase()
         when {
-            key == "plus" -> if (numeral > 0.0) config.getString("placeholders.plus", "+") ?: "+" else ""
-            key == "minus" -> if (numeral < 0.0) config.getString("placeholders.minus", "-") ?: "-" else ""
+            key == "plus" -> if (numeral > 0.0) SertralineSettings.placeholderPlus else ""
+            key == "minus" -> if (numeral < 0.0) SertralineSettings.placeholderMinus else ""
             key == "value" -> string
             key == "auto" -> string.removeSuffix(".0")
             key.startsWith("round:") -> {
@@ -655,12 +665,14 @@ fun Any?.performNormalPlaceholders(content: String, player: Player?, sItem: Mode
 
 fun String.replaceTierPlaceholders(tier: Tier): String {
     return this
-        .replace("{tier}", tier.name)
+        .replace("{tier:name}", tier.name)   // 最高优先级，纯名称
+        .replace("{tier:desc}", tier.description) // 最高优先级，纯描述
+        .replace("{tier}", tier.name)        // 次优先级，纯名称
         .replace("{tier:format}", tier.color + tier.name)
+        .replace("{tier:color}", tier.color)
+        .replace("{tier:id}", tier.id)
         .replace("{tier:weight}", tier.weight.toString())
         .replace("{tier:description}", tier.description)
-        .replace("{tier:id}", tier.id)
-        .replace("{tier:color}", tier.color)
 }
 
 fun String.replaceTypePlaceholders(type: Type): String {
@@ -674,15 +686,15 @@ fun String.replaceTypePlaceholders(type: Type): String {
 
 fun String.replaceLevelPlaceholders(level: Level): String {
     return this
+        .replace("{level:name}", level.name)   // 明确支持 {level:name}
         .replace("{level}", level.name)
-        .replace("{level:name}", level.name)
-        .replace("{level:id}", level.id)
-        .replace("{level:description}", level.description)
         .replace("{level:color}", level.color)
         .replace("{level:weight}", level.weight.toString())
+        .replace("{level:id}", level.id)
+        .replace("{level:description}", level.description)
 }
 
-fun String?.performPlaceholders(sItem: ModernSItem, player: Player?): String? {
+fun String?.performPlaceholders(sItem: AbstractSItem, player: Player?): String? {
     var content = this ?: run {
         return null
     }
@@ -743,7 +755,7 @@ fun String?.performPlaceholders(sItem: ModernSItem, player: Player?): String? {
 //  Element key resolution
 // ═══════════════════════════════════════════════════════════════
 
-fun handleLoreExists(element: AbstractLoreElement, item: ModernSItem): Boolean {
+fun handleLoreExists(element: AbstractLoreElement, item: AbstractSItem): Boolean {
     return when (element) {
         is ComplexLoreElement -> {
             val require = element.lineRequire
@@ -790,7 +802,7 @@ private fun String.splitLoreLines(): List<String> {
 }
 
 fun handleKeyLore(
-    item: ModernSItem,
+    item: AbstractSItem,
     player: Player?,
     element: AbstractLoreElement,
     settings: LoreSetting,
@@ -840,7 +852,7 @@ fun handleKeyLore(
     }
 }
 
-fun handleExistLore(key: String, item: ModernSItem): Boolean {
+fun handleExistLore(key: String, item: AbstractSItem): Boolean {
     return if (key.startsWith("*")) {
         ConfigUtil.existDeep(item.config, key.removePrefix("*"))
     } else {
@@ -890,7 +902,7 @@ fun mergeConsecutiveEmptyStrings(list: List<String>): List<String> {
 // Performs placeholders on a list of strings.
 // Uses per-element processing instead of JSON round-trip to avoid
 // serialization/deserialization overhead.
-fun List<String>.performPlaceholders(sItem: ModernSItem, player: Player?): List<String> {
+fun List<String>.performPlaceholders(sItem: AbstractSItem, player: Player?): List<String> {
     if (isEmpty()) return emptyList()
     return map { it.performPlaceholders(sItem, player) ?: it }
 }

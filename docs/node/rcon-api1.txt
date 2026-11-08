@@ -1,0 +1,11 @@
+﻿--- sertralineapi eval var API = Java.type('io.github.zzzyyylllty.sertraline.api.SertralineItemAPI');
+var Factory = Java.type('io.github.zzzyyylllty.sertraline.data.SItemFactory');
+var out = [];
+var mine = Factory.INSTANCE.parse('minecraft:stone');
+out.push('parse(minecraft:stone) -> ' + mine + ' | class=' + mine.getClass().getSimpleName() + ' | storageKey=' + mine.getStorageKey() + ' | shouldAdapt=' + mine.getShouldAdapt() + ' | material=' + mine.getMaterial());
+var ext = Factory.INSTANCE.parse('itemsadder:gun');
+out.push('parse(itemsadder:gun) -> class=' + ext.getClass().getSimpleName() + ' | storageKey=' + ext.getStorageKey() + ' | shouldAdapt=' + ext.getShouldAdapt());
+var bare = Factory.INSTANCE.parse('doe_card');
+out.push('parse(doe_card) -> class=' + bare.getClass().getSimpleName() + ' | storageKey=' + bare.getStorageKey());
+out.join('\n');
+(empty)

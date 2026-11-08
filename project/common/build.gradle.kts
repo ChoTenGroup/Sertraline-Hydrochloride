@@ -32,6 +32,7 @@ if (platform == "legacy12") {
         "**/listener/sertraline/itemTradeRestriction.kt",
         "**/listener/action/itemActionRiptide.kt",
         "**/listener/action/itemActionPickup.kt",
+        "**/listener/update/itemUpdatePickupListener.kt",
         "**/attribute/MythicLibAttributeProvider.kt",
         "**/util/dependencies/MMOUtil.kt",
         "**/recipe/ItemResolver.kt",

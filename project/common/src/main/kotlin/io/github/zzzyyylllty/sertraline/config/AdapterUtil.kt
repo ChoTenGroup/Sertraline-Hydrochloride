@@ -1,44 +1,11 @@
 package io.github.zzzyyylllty.sertraline.config
 
-import io.github.zzzyyylllty.sertraline.data.ModernSItem
-import io.github.zzzyyylllty.sertraline.util.loreformat.performPlaceholders
-import io.github.zzzyyylllty.sertraline.util.minimessage.toComponent
-import net.kyori.adventure.text.Component
-import org.bukkit.entity.Player
-
-@Deprecated("设计过于傻逼，重构后不适合再使用")
-public class AdapterUtil(val input: Map<String, Any?>?) {
-    fun getString(location: String): String? {
-        return input?.get(location)?.toString()
-    }
-    fun getTextComponent(location: String, sItem: ModernSItem, player: Player?): Component? {
-        return (input?.get(location)?.toString())?.performPlaceholders(sItem, player)?.toComponent()
-    }
-    fun getTextComponentList(location: String, sItem: ModernSItem,player: Player?): List<Component>? {
-        val get = input?.get(location) ?: return null
-        val list = get as? List<*> ?: listOf(get.toString())
-        val retList : MutableList<Component> = mutableListOf()
-        list.asListEnhanced()?.performPlaceholders(sItem, player)?.forEach { retList.add(it.toComponent()) }
-        return retList
-    }
-    fun getInt(location: String): Int? {
-        return input?.get(location)?.toString()?.toInt()
-    }
-
-    fun getLong(location: String): Long? {
-        return input?.get(location)?.toString()?.toLong()
-    }
-    fun getDeep(location: String): Any? {
-        val keys = location.split(".")
-        var current: Any? = input
-        for (key in keys) {
-            if (current !is Map<*, *>) return null
-            current = current[key]
-        }
-        return current
-    }
-}
-
+/**
+ * 将任意值转换为字符串列表。
+ * - null → null
+ * - List<*> → 展开为字符串列表，每个元素按换行符拆分
+ * - 其他类型 → 包装为单元素列表
+ */
 fun Any?.asListEnhanced() : List<String>? {
     if (this == null) return null
     val thisList = if (this is List<*>) this else listOf(this)

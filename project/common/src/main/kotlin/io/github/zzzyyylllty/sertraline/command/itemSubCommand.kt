@@ -67,6 +67,7 @@ object ItemCommand {
             }
             suggestion<CommandSender>(uncheck = true) { sender, context ->
                 itemMap.keys.asList()
+                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
             }
             player("player") {
                 execute<CommandSender> { sender, context, argument ->

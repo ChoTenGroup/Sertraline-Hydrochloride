@@ -1,5 +1,6 @@
 package io.github.zzzyyylllty.sertraline.listener
 
+import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.data.CraftingStationDataManager
 import io.github.zzzyyylllty.sertraline.gui.CraftingStationManager
 import org.bukkit.event.player.PlayerJoinEvent
@@ -28,5 +29,8 @@ object CraftingStationListener {
 
         // Cancel the in-memory session; persisted data has already been written by the PTC object
         CraftingStationManager.cancelPlayerSession(player.uniqueId.toString())
+
+        // Evict the player's private persistent cache to free memory (DB data is safe)
+        Sertraline.manager.evictPlayer(player.uniqueId.toString())
     }
 }

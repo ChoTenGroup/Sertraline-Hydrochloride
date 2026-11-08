@@ -1,6 +1,5 @@
 package io.github.zzzyyylllty.sertraline.util.minimessage
 
-import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.github.zzzyyylllty.sertraline.logger.warningL
 import io.github.zzzyyylllty.sertraline.util.VersionHelper
@@ -11,6 +10,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.momirealms.sparrow.message.MiniMessage as SparrowMiniMessage
+import java.util.concurrent.ConcurrentMap
 
 val mmUtil = MiniMessage.miniMessage()
 val mmStrictUtil = MiniMessage.builder().strict(true).build()
@@ -69,8 +69,10 @@ object FastMiniMessage {
 
     private val sparrow: SparrowMiniMessage by lazy { SparrowMiniMessage.miniMessage() }
 
+    // Typed as ConcurrentMap rather than Caffeine's Cache: this object's <clinit> would otherwise have to
+    // resolve the Caffeine type, which does not exist until LifeCycle.INIT (runtime-injected + relocated).
     @Volatile
-    private var cache: Cache<String, Component>? = null
+    private var cache: ConcurrentMap<String, Component>? = null
 
     fun applyConfig(enable: Boolean, cacheSize: Int) {
         if (!sparrowSupported()) {
@@ -80,9 +82,9 @@ object FastMiniMessage {
             if (enable) warningL("Warning_Fast_MiniMessage_Adventure_Unsupported")
             return
         }
-        enabled = enable && !VersionHelper().isLegacy() && !broken
+        enabled = enable && !VersionHelper.isLegacy() && !broken
         cache = if (enabled && cacheSize > 0) {
-            Caffeine.newBuilder().maximumSize(cacheSize.toLong()).build()
+            Caffeine.newBuilder().maximumSize(cacheSize.toLong()).build<String, Component>().asMap()
         } else {
             null
         }
@@ -92,9 +94,9 @@ object FastMiniMessage {
         if (!enabled) return mmUtil.deserialize(str)
         val c = cache
         if (c != null) {
-            c.getIfPresent(str)?.let { return it }
+            c[str]?.let { return it }
             val parsed = safeSparrowDeserialize(str) ?: return mmUtil.deserialize(str)
-            c.put(str, parsed)
+            c[str] = parsed
             return parsed
         }
         return safeSparrowDeserialize(str) ?: mmUtil.deserialize(str)
