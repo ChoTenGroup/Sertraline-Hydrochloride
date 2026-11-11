@@ -1,8 +1,23 @@
+# ===== Gradle / IDE =====
 .gradle
 .idea
 build
-.claude
-gradle.properties
-libs
 .kotlin
+.claude
+
+# ===== 本地配置：含签名口令与 Maven Central 凭据，绝对不要提交 =====
+gradle.properties
+
+# ===== 本地依赖目录（依赖由 libs-public / 远程仓库提供）=====
+libs
+
+# ===== 构建、运行与调试产物 =====
+*.log
 hs_err_pid*.log
+replay_pid*.log
+*.hprof
+*.class
+
+# ===== 开发用探针插件：保留源码，忽略构建产物 =====
+docs/probe-plugin/out/
+docs/probe-plugin/*.jar
