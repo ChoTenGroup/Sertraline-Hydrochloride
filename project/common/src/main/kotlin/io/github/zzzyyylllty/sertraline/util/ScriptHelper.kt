@@ -132,6 +132,8 @@ object ScriptHelper {
      */
     fun hasScript(name: String): Boolean = scriptCache.containsKey(name)
 
+    fun getScriptType(name: String): ScriptType? = scriptCache[name]?.type
+
     private fun loadScriptFile(file: File): Int {
         var count = 0
         try {
@@ -320,7 +322,7 @@ object ScriptHelper {
             return null
         }
         val bindings = engine.createBindings()
-        vars.forEach { (k, v) -> bindings[k] = v }
+        vars.forEach { (k, v) -> if (k != "Math" || v != Math::class.java) bindings[k] = v }
         return engine.eval(script, bindings)
     }
 

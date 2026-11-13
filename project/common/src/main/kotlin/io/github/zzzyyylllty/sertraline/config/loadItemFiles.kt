@@ -200,7 +200,10 @@ fun loadItemFile(file: File, regex: Regex, context: LoadContext? = null): Boolea
                 Sertraline.itemSourceFile[key] = file.absolutePath
             }
             val value = map[key]
-            ItemLoadEvent(key, value as? Map<String, Any?>? ?: linkedMapOf(), linkedMapOf(), context).call()
+            val arguments = value as? Map<String, Any?> ?: linkedMapOf()
+            io.github.zzzyyylllty.sertraline.listener.sertraline.validateAttributeModifiers(key, arguments,
+                context?.attributes ?: io.github.zzzyyylllty.sertraline.attribute.AttributeRegistry.snapshot())
+            ItemLoadEvent(key, arguments, linkedMapOf(), context).call()
         }
 
         SertralineItemSingleFileLoadPostEvent(file, context, true).call()
@@ -208,6 +211,7 @@ fun loadItemFile(file: File, regex: Regex, context: LoadContext? = null): Boolea
     } catch (e: Exception) {
         severeL("Item_Load_Error_Parse", file.name, e.message ?: "Unknown error")
         SertralineItemSingleFileLoadPostEvent(file, context, false, e).call()
+        if (context != null) throw e
         false
     }
 }

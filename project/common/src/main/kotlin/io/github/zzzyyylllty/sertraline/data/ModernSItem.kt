@@ -70,6 +70,7 @@ fun registerExternalData() {
         "PlayerUtil" to PlayerUtil,
         "ExternalItemHelper" to ExternalItemHelper,
         "SertralineAPI" to _api,
+        "AttributeAPI" to io.github.zzzyyylllty.sertraline.attribute.api.SertralineAttributeAPI,
         "DataUtil" to DataUtil,
         "Math" to Math::class.java,
         "System" to System::class.java,
