@@ -2,9 +2,20 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 taboolib { subproject = true }
 
+tasks.withType<Test>().configureEach {
+    minHeapSize = "32m"
+    maxHeapSize = "128m"
+    jvmArgs("-XX:+UseSerialGC")
+}
+
 val platform: String = (findProperty("platform") ?: "paper") as String
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation(files(configurations.compileClasspath))
+    testRuntimeOnly("org.graalvm.js:js-language:${rootProject.libs.versions.graalvm.get()}")
+    testRuntimeOnly("org.graalvm.truffle:truffle-runtime:${rootProject.libs.versions.graalvm.get()}")
+    testRuntimeOnly("org.openjdk.nashorn:nashorn-core:${rootProject.libs.versions.nashorn.get()}")
     // Both legacy12 and spigot use the spigot source set (pure Bukkit API + fallback paths); only paper uses the paper source set
     if (platform != "paper") {
         compileOnly(project(":project:spigot", configuration = "spigotOutput"))

@@ -21,6 +21,10 @@ import io.github.zzzyyylllty.sertraline.data.Type
  */
 class LoadContext {
 
+    var attributeTypes: Map<String, io.github.zzzyyylllty.sertraline.attribute.data.AttributeType>? = null
+    var attributeOperations: Map<String, io.github.zzzyyylllty.sertraline.attribute.data.AttributeExpression> = emptyMap()
+    var attributes: io.github.zzzyyylllty.sertraline.attribute.AttributeRegistry.Snapshot? = null
+
     // ---- 局部新增/覆盖条目（candidate） ----
 
     val items = LinkedHashMap<String, AbstractSItem>()
@@ -85,6 +89,7 @@ class LoadContext {
         val newItemCache = s.newItemCacheMap()
         newItemCache.putAll(itemCache)
 
+        attributeTypes?.let { io.github.zzzyyylllty.sertraline.attribute.AttributeRegistry.publishConfig(it, attributeOperations) }
         s.mappings = newMappings
         s.tiers = newTiers
         s.types = newTypes

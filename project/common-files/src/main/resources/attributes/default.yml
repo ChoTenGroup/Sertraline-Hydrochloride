@@ -1,0 +1,56 @@
+# Definitions / 属性定义
+attributes:
+  demo:might:
+    name: Might
+    base: 10
+    constraint:
+      min: 0
+      max: 100
+    operations:
+      - minecraft:add_value
+      - minecraft:add_multiplied_base
+      - minecraft:add_multiplied_total
+      - demo:add_capped
+
+  demo:critical_chance:
+    name: Critical Chance
+    base: 0.2
+    constraint:
+      min: 0
+      max: 1
+
+  # Derived value / 派生值
+  demo:combat_power:
+    name: Combat Power
+    derived: "demo:might * (1 + demo:critical_chance)"
+    constraint:
+      min: 0
+      max: 10000
+
+  # Owned vanilla modifier / 独立原版修饰符
+  demo:vitality:
+    name: Vitality
+    base: 0
+    entities: [minecraft:player]
+    constraint:
+      min: 0
+      max: 1000
+    sync:
+      - target: minecraft:max_health
+        operation: add_value
+        value: value
+
+  # Native base / 原版基础值
+  demo:ward:
+    name: Ward
+    base:
+      type: vanilla
+      attribute: minecraft:armor
+      fallback: 0
+      transform: "value * 0.5"
+      update_interval: 20
+
+# Custom stage / 自定义阶段
+attribute_operations:
+  demo:add_capped:
+    expression: "MIN(current + amount, base * 2)"

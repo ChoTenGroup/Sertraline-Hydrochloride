@@ -114,6 +114,7 @@ object SertralineMainConfig {
         SConfigNode("file-load.tier", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", ""),
         SConfigNode("file-load.type", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", ""),
         SConfigNode("file-load.level", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", ""),
+        SConfigNode("file-load.attribute", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", "Attribute files / 属性文件"),
 
         // ==================== 预加载 ====================
         SConfigNode("preload.script.graaljs", true, "预编译脚本\nPre-compile scripts"),
@@ -205,6 +206,10 @@ object SertralineMainConfig {
             "Spigot 专用：模拟 Paper 的装备更换事件（属性刷新）。Paper 上自动忽略。\n"
                 + "Spigot-only: simulate Paper's armor change event (attribute refresh). Ignored on Paper."
         ),
+        SConfigNode("attribute.enable", true, "Enable attributes / 启用属性"),
+        SConfigNode("attribute.update-interval", 20, "Refresh ticks / 刷新周期"),
+        SConfigNode("attribute.vanilla-sync", "auto", "Vanilla sync: auto, true, false / 原版同步"),
+        SConfigNode("attribute.rebase-vanilla", false, "Legacy zero base / 旧版零基值"),
 
         // ==================== 动作 ====================
         SConfigNode(

@@ -1,0 +1,49 @@
+# Legacy values / 旧版数值
+example_attribute_sword:
+  attribute:
+    attack_damage: 100
+    attack_speed: 100%
+    crit_chance: 25%
+    max_health: 10
+  sertraline:
+    lore-format: attribute
+  xbuilder:
+    name: "<!i><aqua>Attribute Sword"
+    material: DIAMOND_SWORD
+
+# Decimal amounts / 小数修饰量
+example_modifier_sword:
+  attribute-modifiers:
+    - type: demo:might
+      id: demo:sword/might
+      amount: 8
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: demo:might
+      id: demo:sword/bonus
+      amount: 0.2
+      operation: minecraft:add_multiplied_base
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>Might Sword"
+    material: DIAMOND_SWORD
+    lore:
+      - "<!i><gray>+8 Might, +20% Might"
+
+# Dynamic JS / 动态 JS
+example_attribute_helmet:
+  settings:
+    attribute_modifiers:
+      - type: demo:vitality
+        id: demo:helmet/vitality
+        amount:
+          type: js
+          script: "return 4 + player.getLevel() * 0.2;"
+        operation: minecraft:add_value
+        slot: head
+        update_interval: 20
+  xbuilder:
+    name: "<!i><aqua>Vitality Helmet"
+    material: DIAMOND_HELMET
+    lore:
+      - "<!i><gray>Vitality scales with level."

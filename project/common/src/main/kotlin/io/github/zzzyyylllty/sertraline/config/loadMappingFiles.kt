@@ -72,7 +72,9 @@ private fun mergePackagedDefaultMappings(context: LoadContext? = null) {
         devLog("Packaged mappings resource not readable, skipping default merge.")
         return
     }
-    val parsed = runCatching { Yaml().load<Map<Any?, Any?>>(text) }.getOrNull() ?: return
+    // `load(text) as? Map` instead of `load<Map<..>>(text)`: the legacy12 compile surface ships an
+    // older SnakeYAML whose `load(String)` is not generic, so an explicit type argument fails there.
+    val parsed = runCatching { Yaml().load(text) as? Map<*, *> }.getOrNull() ?: return
 
     var addedKeys = 0
     var addedValues = 0

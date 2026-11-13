@@ -1,7 +1,7 @@
 
 [versions]
-taboolib = "6.3.0-75b18a2"
-#taboolib = "6.3.0-8f586e4"  # 上游缺陷：PrimitiveLoader 要求 reflex 1.2.6，但模块按 reflex 1.2.4 编译，会抛 ClassStructure.getInterfaces() NoSuchMethodError
+taboolib = "6.3.0-8f586e4"
+#taboolib = "6.3.0-75b18a2"
 #taboolib = "6.3.0-afd75a7"
 #taboolib = "6.2.4-local-dev"
 taboolibPlugin = "2.0.40"

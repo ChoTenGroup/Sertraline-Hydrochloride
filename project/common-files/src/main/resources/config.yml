@@ -73,6 +73,7 @@ file-load:
   tier: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
   type: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
   level: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
+  attribute: "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
 
 
 
@@ -192,6 +193,7 @@ tags:
   papi: true
   nbt: true
   gem-slot: true
+  attribute: true
   val: true
   var: true
   dynamic: true
@@ -213,6 +215,20 @@ attribute:
   # Spigot 专用：模拟 Paper 的装备更换事件（属性刷新）。Paper 上自动忽略。
   # Spigot-only: simulate Paper's armor change event (attribute refresh). Ignored on Paper.
   armor-change-polling: false
+
+  # Enable attributes / 启用属性
+  enable: true
+
+  # Refresh ticks / 刷新周期
+  update-interval: 20
+
+  # Vanilla sync: auto, true, false / 原版同步
+  # auto skips competing providers / auto 避让其他属性插件
+  vanilla-sync: auto
+
+  # Legacy zero base / 旧版零基值
+  rebase-vanilla: false
+
 action:
 
   # 默认节流时间

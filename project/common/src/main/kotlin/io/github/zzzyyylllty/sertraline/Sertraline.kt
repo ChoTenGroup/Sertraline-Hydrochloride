@@ -1,4 +1,4 @@
-﻿package io.github.zzzyyylllty.sertraline
+package io.github.zzzyyylllty.sertraline
 
 import io.github.zzzyyylllty.sertraline.api.SertralineAPI
 import io.github.zzzyyylllty.sertraline.api.SertralineAPIImpl
@@ -9,6 +9,7 @@ import io.github.zzzyyylllty.sertraline.config.TemplateManager
 import io.github.zzzyyylllty.sertraline.config.common.SertralineConfigManager
 import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.config.loadCraftingStationFiles
+import io.github.zzzyyylllty.sertraline.config.loadAttributeFiles
 import io.github.zzzyyylllty.sertraline.gui.CraftingStationManager
 import io.github.zzzyyylllty.sertraline.config.loadItemFiles
 import io.github.zzzyyylllty.sertraline.config.loadLoreFormatFiles
@@ -38,6 +39,8 @@ import io.github.zzzyyylllty.sertraline.debugMode.devLogSync
 import io.github.zzzyyylllty.sertraline.attribute.AttributeManager
 import io.github.zzzyyylllty.sertraline.attribute.AttributeProvider
 import io.github.zzzyyylllty.sertraline.attribute.ChotenAttributeProvider
+import io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeEngine
+import io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeProvider
 import io.github.zzzyyylllty.sertraline.event.SertralineAllFileLoadPostEvent
 import io.github.zzzyyylllty.sertraline.event.SertralineAllFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.event.SertralineReloadEvent
@@ -59,6 +62,7 @@ import io.github.zzzyyylllty.sertraline.logger.sendStringAsComponent
 import io.github.zzzyyylllty.sertraline.logger.warningL
 import io.github.zzzyyylllty.sertraline.database.DatabaseManager
 import io.github.zzzyyylllty.sertraline.util.SertralineLocalDependencyHelper
+import io.github.zzzyyylllty.sertraline.util.TabooLibCacheCheck
 import io.github.zzzyyylllty.sertraline.util.dependencies
 import io.github.zzzyyylllty.sertraline.util.ItemTagManager
 import io.github.zzzyyylllty.sertraline.util.ScriptHelper
@@ -301,6 +305,8 @@ object Sertraline : Plugin() {
     }
 
     override fun onLoad() {
+        // Report stale TabooLib module caches first: they break the class visitor during construction.
+        TabooLibCacheCheck.check()
         // Bind config files before DatabaseManager (which reads config via lazy dbConfig) and
         // before any other potential consumer; PacketEventsUtil also binds early at LOAD, but
         // binding here makes the ordering explicit rather than relying on that side effect.
@@ -326,6 +332,13 @@ object Sertraline : Plugin() {
     override fun onDisable() {
         // Stop metrics submission first so shutdown noise is not reported
         SertralineMetrics.shutdown()
+        // Give the vanilla attribute base values back before we stop listening, otherwise
+        // players keep the boosted health/attack damage after the plugin is reloaded or removed.
+        try {
+            SertralineAttributeEngine.restoreAllOnline()
+        } catch (e: Throwable) {
+            warningSSync("[onDisable] Failed to restore vanilla attributes: ${e.message}")
+        }
         // Stop the periodic item-update scanner
         try {
             ItemUpdateScheduler.cancel()
@@ -510,6 +523,12 @@ object Sertraline : Plugin() {
             }
             ReloadCollector.addStat(console.asLangText("Reload_Stat_Levels", loadContext.levels.size))
 
+            // attribute definitions must exist before items parse their `attribute:` section
+            try { loadAttributeFiles(loadContext) } catch (e: Exception) {
+                severeL("Config_Load_Error_Parse", "attributes", e.message ?: "Unknown error")
+                candidateFailed = true
+            }
+
             try { loadItemFiles(loadContext) } catch (e: Exception) {
                 severeL("Config_Load_Error_Parse", "items", e.message ?: "Unknown error")
                 candidateFailed = true
@@ -577,6 +596,15 @@ object Sertraline : Plugin() {
             }
             try { initRevisionAutoTracker() } catch (e: Exception) {
                 severeL("Config_Load_Error_Parse", "revision-auto-tracker", e.message ?: "Unknown error")
+            }
+
+            // Attribute definitions (attributes/*.yml) and item `attribute:` sections may have
+            // changed: re-apply to online players, otherwise the new values only show up on the
+            // next equip/hotbar change.
+            try {
+                for (player in Bukkit.getOnlinePlayers()) AttributeManager.refreshAttributes(player)
+            } catch (e: Exception) {
+                warningSSync("Attribute refresh after reload failed: ${e.message}")
             }
 
             // Item updater: recreate the periodic scan with the (possibly changed) interval, then
@@ -717,6 +745,8 @@ object Sertraline : Plugin() {
 }
 
 fun registerNativeAttributeProviders() {
+    // Sertraline's own attribute engine drives the `attribute:` item section.
+    AttributeManager.register(SertralineAttributeProvider())
     // MythicLibAttributeProvider depends on io.lumine.*, which doesn't exist on the legacy12 compile surface (file excluded); registered reflectively, silently skipped when the class is missing
     try {
         Class.forName("io.github.zzzyyylllty.sertraline.attribute.MythicLibAttributeProvider")

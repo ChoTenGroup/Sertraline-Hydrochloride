@@ -166,9 +166,7 @@ object GraalJsUtil {
      */
     fun evalToJsString(script: String, vars: Map<String, Any?>): Any? {
         if (VersionHelper.isLegacy()) return evalNashorn(script, vars)
-        val (context, bindings) = prepareContext(vars)
-        val result: Value = context.eval(GJS_LANG_ID, script)
-        return result?.toString() ?: result
+        return withBindings(vars) { context -> context.eval(GJS_LANG_ID, script).toString() }
     }
 
     /**
@@ -187,52 +185,36 @@ object GraalJsUtil {
             return null
         }
         val bindings = engine.createBindings()
-        vars.forEach { (k, v) -> bindings[k] = v }
+        vars.forEach { (k, v) -> if (k != "Math" || v != Math::class.java) bindings[k] = v }
         return engine.eval(script, bindings)
     }
 
     /** Graal context re-used per-thread, avoiding creating/destroying a Context on every eval (context creation is the main overhead) */
     private val contextHolder = ThreadLocal<Context>()
-    private val addedKeysHolder = ThreadLocal<MutableSet<String>>()
-
-    /** Get (or create) the current thread's context, inject the variables, and return the context and bindings */
-    private fun prepareContext(vars: Map<String, Any?>): Pair<Context, Value> {
+    /** Restore bindings after nested calls. */
+    internal fun <T> withBindings(vars: Map<String, Any?>, block: (Context) -> T): T {
         val context = contextHolder.get() ?: newGraalContext().also { contextHolder.set(it) }
-        val bindings: Value = try {
-            context.getBindings(GJS_LANG_ID)
-        } catch (e: IllegalStateException) {
-            // the context was closed by DISABLE (old thread-pool threads still alive after hot reload), rebuild it
-            val fresh = newGraalContext()
-            contextHolder.set(fresh)
-            fresh.getBindings(GJS_LANG_ID)
-        }
-        val addedKeys = addedKeysHolder.get() ?: mutableSetOf<String>().also { addedKeysHolder.set(it) }
-        // Only clean up the keys added last time (i.e. the variables injected this time) to avoid variable residue pollution; do not clear globals declared by the script itself
-        for (key in addedKeys) {
-            try {
-                bindings.removeMember(key)
-            } catch (_: Exception) {
+        val bindings = context.getBindings(GJS_LANG_ID)
+        val previous = linkedMapOf<String, Value?>()
+        try {
+            for ((key, value) in vars) {
+                if (key == "Math" && value == Math::class.java) continue
+                previous[key] = if (bindings.hasMember(key)) bindings.getMember(key) else null
+                bindings.putMember(key, value)
+            }
+            return block(context)
+        } finally {
+            for ((key, value) in previous) {
+                if (value == null) bindings.removeMember(key) else bindings.putMember(key, value)
             }
         }
-        addedKeys.clear()
-        vars.forEach {
-            bindings.putMember(it.key, it.value)
-            addedKeys.add(it.key)
-        }
-        return context to bindings
     }
 
-    private fun executeScriptString(script: String, vars: Map<String, Any?>): Any? {
-        val (context, _) = prepareContext(vars)
-        val result: Value = context.eval(GJS_LANG_ID, script)
-        return result.`as`(Any::class.java)
-    }
+    private fun executeScriptString(script: String, vars: Map<String, Any?>): Any? =
+        withBindings(vars) { it.eval(GJS_LANG_ID, script).`as`(Any::class.java) }
 
-    private fun executeScriptSource(source: Source, vars: Map<String, Any?>): Any? {
-        val (context, _) = prepareContext(vars)
-        val result: Value = context.eval(source)
-        return result.`as`(Any::class.java)
-    }
+    private fun executeScriptSource(source: Source, vars: Map<String, Any?>): Any? =
+        withBindings(vars) { it.eval(source).`as`(Any::class.java) }
 
     fun createContext(vars: Map<String, Any?>): Context {
         // initialize the warm-up context
@@ -258,7 +240,6 @@ object GraalJsUtil {
             liveContexts.clear()
         }
         contextHolder.remove()
-        addedKeysHolder.remove()
     }
 
     internal fun loadDependencies(name: String) {

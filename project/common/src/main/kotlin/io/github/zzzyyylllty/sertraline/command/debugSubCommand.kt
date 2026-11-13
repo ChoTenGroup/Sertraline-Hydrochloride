@@ -25,6 +25,9 @@ import io.github.zzzyyylllty.sertraline.util.ComponentFormatter
 import io.github.zzzyyylllty.sertraline.util.ItemTagManager
 import io.github.zzzyyylllty.sertraline.util.ItemTagUtil.parseNBT
 import io.github.zzzyyylllty.sertraline.attribute.AttributeManager
+import io.github.zzzyyylllty.sertraline.attribute.AttributeRegistry
+import io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeEngine
+import io.github.zzzyyylllty.sertraline.attribute.VanillaAttributes
 import io.github.zzzyyylllty.sertraline.item.rebuildDisplay
 import io.github.zzzyyylllty.sertraline.item.rebuildName
 import io.github.zzzyyylllty.sertraline.util.minimessage.mmUtil
@@ -43,6 +46,7 @@ import taboolib.common.platform.command.mainCommand
 import taboolib.common.platform.command.player
 import taboolib.common.platform.command.subCommand
 import taboolib.common.platform.function.getDataFolder
+import taboolib.common.platform.function.submit
 import taboolib.common.platform.function.submitAsync
 import taboolib.common.util.asList
 import taboolib.module.configuration.Configuration
@@ -282,6 +286,50 @@ object DebugCommand {
                 return@execute
             }
             AttributeManager.refreshAttributes(player)
+        }
+    }
+
+    /** Dumps the attribute registry and the sender's computed/vanilla values. */
+    @CommandBody
+    val attribute = subCommand {
+        execute<CommandSender> { sender, context, argument ->
+            val player = sender as? Player ?: run {
+                warningS("/sertralinedebug attribute must be run by a player")
+                return@execute
+            }
+            AttributeManager.refreshAttributes(player)
+            // refreshAttributes hops to the next tick; dump after it so the cache is populated
+            submit(delay = 2L) {
+                sender.sendStringAsComponent(
+                    "<aqua>Attributes</aqua> <gray>registered=${AttributeRegistry.size()} " +
+                        "vanilla-sync=${SertralineAttributeEngine.vanillaSyncActive()} " +
+                        "mode=${SertralineAttributeEngine.vanillaSyncModeName()}</gray>"
+                )
+                val totals = SertralineAttributeEngine.getAll(player)
+                // Live vanilla values, independent of the cache: shows whether a restore happened.
+                val live = listOf("max_health", "attack_damage", "attack_speed", "armor").joinToString(" ") { id ->
+                    val name = AttributeRegistry.get(id)?.vanillaName ?: id
+                    val base = VanillaAttributes.resolve(name)?.let { VanillaAttributes.instanceOf(player, it)?.baseValue }
+                    "$id=$base"
+                }
+                sender.sendStringAsComponent("<gray>live: $live max-health=${player.maxHealth}</gray>")
+                if (totals.isEmpty()) {
+                    sender.sendStringAsComponent("<gray>No attribute modifiers on the current gear.</gray>")
+                } else {
+                    for ((id, value) in totals.toSortedMap()) {
+                        val type = AttributeRegistry.get(id)
+                        val live = type?.vanillaName?.let { name ->
+                            VanillaAttributes.resolve(name)?.let { attr ->
+                                VanillaAttributes.instanceOf(player, attr)?.baseValue
+                            }
+                        }
+                        sender.sendStringAsComponent(
+                            "<gray> - </gray><white>$id</white><gray>: $value" +
+                                (if (live != null) " (vanilla baseValue=$live)" else " (custom)") + "</gray>"
+                        )
+                    }
+                }
+            }
         }
     }
 
