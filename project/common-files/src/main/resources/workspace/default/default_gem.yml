@@ -4,6 +4,9 @@
 # 槽位写在物品的 sertraline:gem-slots 下，宝石词条写在宝石物品的 sertraline:gem 下。
 # Sockets are declared under sertraline:gem-slots of the item, gem behaviour
 # under sertraline:gem of the gem item.
+# 槽位 name/desc 优先取物品配置；省略时尝试语言键 Gem_Slot_<slotId>_Name / _Desc。
+# Socket name/desc come from the item first; if omitted, the plugin checks
+# Gem_Slot_<slotId>_Name / _Desc language nodes.
 #
 # 镶嵌方式 How to socket:
 #   - 手持宝石点武器 / Hold a gem on the cursor and click the weapon
@@ -55,6 +58,51 @@ gem_example_sword:
       <!i>${gem-slot:slot_red}$
       <!i>${gem-slot:slot_any}$
       <!i>${gem-slot:slot_locked}$
+
+# ------------------------------------------------------------
+# 只能嵌红宝石的武器 A weapon that only takes a ruby
+#
+# `gem-color: "red"` 是一个正则，只有 color 为 red 的宝石（见下面的
+# gem_example_ruby）能进入 ruby_socket；蓝宝石/无色宝石会被拒绝（COLOR_MISMATCH）。
+# `gem-color: "red"` is a regex, so only gems whose `color` is `red` (see
+# gem_example_ruby) fit ruby_socket; blue or colourless gems are refused.
+#
+# 红宝石的 modify-data 会给 vars.atk 加 15，所以镶嵌后
+# “Attack Power” 会从 120 变成 135，取下后恢复 120。
+# The ruby's modify-data adds 15 to vars.atk, so socketing it turns
+# "Attack Power" from 120 into 135, and removing it goes back to 120.
+# ------------------------------------------------------------
+ruby_heart_sword:
+  sertraline:
+    tier: A
+    vars:
+      atk: 120
+    gem-slots:
+      ruby_socket:
+        name: "<red>Ruby Socket"
+        desc: "<gray>Fits a <red>ruby<gray>."
+        gem-color: "red"
+  xbuilder:
+    name: "<!i><gradient:red:gold>Ruby Heart Sword"
+    material: NETHERITE_SWORD
+    glow: true
+    lore: |
+      <!i><#888888>A blade with a single heart-shaped socket,
+      <!i><#888888>waiting for a ruby to set it ablaze.
+      <!i>
+      <!i><gray>Attack Power: <red>${var:atkAsIn}$
+      <!i><#888888>Socket a <red>ruby<#888888> to gain <red>+15<#888888> Attack Power.
+      <!i>
+      <!i>${gem-slot:ruby_socket}$
+    attributes:
+      ATTACK_DAMAGE:
+        amount: 4
+        operation: ADD_NUMBER
+        slot: HAND
+      ATTACK_SPEED:
+        amount: 0.5
+        operation: ADD_NUMBER
+        slot: HAND
 
 gem_example_ruby:
   sertraline:

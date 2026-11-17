@@ -1,6 +1,8 @@
 ﻿package io.github.zzzyyylllty.sertraline.item.process
 
 import io.github.zzzyyylllty.sertraline.data.getGemSlotDefinitions
+import io.github.zzzyyylllty.sertraline.data.localizedDesc
+import io.github.zzzyyylllty.sertraline.data.localizedName
 import io.github.zzzyyylllty.sertraline.item.gem.getSocketedGem
 import io.github.zzzyyylllty.sertraline.item.process.tag.ProcessItemTagData
 import io.github.zzzyyylllty.sertraline.item.process.tag.processTagPrefix
@@ -31,8 +33,9 @@ fun gemSlotTagProcessor(data: ProcessItemTagData, player: Player?, repl: Map<Str
                 val slotId = cleanedSection ?: return@processTagPrefix default
                 val slot = slots[slotId] ?: return@processTagPrefix default
                 val socketed = data.itemStack?.getSocketedGem(slotId)
-                val text = if (socketed != null) "◆ ${slot.name}: ${socketed.gemId ?: "?"}"
-                else "◇ ${slot.name} — ${slot.desc}"
+                val name = slot.localizedName(player)
+                val text = if (socketed != null) "◆ $name: ${socketed.gemId ?: "?"}"
+                else "◇ $name — ${slot.localizedDesc(player)}"
                 jsonEscape(text)
             },
             repl = it,

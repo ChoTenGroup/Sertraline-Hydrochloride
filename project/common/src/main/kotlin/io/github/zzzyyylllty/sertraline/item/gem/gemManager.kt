@@ -22,13 +22,13 @@ import io.github.zzzyyylllty.sertraline.item.writeAlterationRecordsToTag
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.util.isNotExist
+import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.util.io.BukkitObjectInputStream
 import org.bukkit.util.io.BukkitObjectOutputStream
 import taboolib.module.nms.ItemTag
 import taboolib.module.nms.getItemTag
-import taboolib.platform.util.giveItem
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 
@@ -80,12 +80,60 @@ enum class GemUnsocketResult {
     NOT_SERTRALINE,
     SLOT_NOT_FOUND,
     SLOT_EMPTY,
+    INVENTORY_FULL,
+    PLAYER_REQUIRED,
 
     /**
      * The gem could not be handed back (missing template / rebuild failure). The slot was
      * left untouched so no gem is lost — retrying later is safe.
      */
     INTERNAL_ERROR,
+}
+
+internal data class GemAlterationRebasePlan(
+    val orderedRecords: List<RecordedAlteration>,
+    val removedRecords: List<RecordedAlteration>,
+    val replayRecords: List<RecordedAlteration>,
+)
+
+internal fun planGemAlterationRebase(
+    records: List<RecordedAlteration>,
+    removedSlotId: String,
+    knownSlots: Collection<String>,
+): GemAlterationRebasePlan {
+    val ordered = records.mapIndexed { index, record -> index to record }
+        .sortedBy { (index, record) -> record.order ?: index.toLong() }
+        .map { it.second }
+    val (removed, remaining) = ordered.partition {
+        gemAlterationOwner(it.alteration.name, knownSlots) == removedSlotId
+    }
+    val replay = remaining.map { record ->
+        if (record.persisted && record.alteration.isPersistentTarget()) {
+            record.copy(
+                persisted = false,
+                previous = null,
+                previousKnown = false,
+                previousPresent = false,
+                previousParentPath = null,
+                previousParent = null,
+                previousParentPresent = false,
+                previousParentRoot = false,
+            )
+        } else record
+    }
+    return GemAlterationRebasePlan(ordered, removed, replay)
+}
+
+internal fun <T> resolveGemReturn(
+    itemPayload: ByteArray?,
+    gemId: String?,
+    decodePayload: (ByteArray) -> T?,
+    buildTemplate: (String) -> T?,
+    isValid: (T, String?) -> Boolean,
+): T? = if (itemPayload != null) {
+    decodePayload(itemPayload)?.takeIf { isValid(it, gemId) }
+} else {
+    gemId?.let(buildTemplate)?.takeIf { isValid(it, gemId) }
 }
 
 /** Snapshot of one socketed gem, read from NBT. */
@@ -213,14 +261,21 @@ fun socketGem(
     // Ownership is resolved by the LONGEST matching `gem_<slotId>_` prefix, never by a plain
     // `startsWith`: `slot` is a prefix of `slot_red`, so a naive filter would delete another
     // socket's alterations (and revert their stats) while leaving them marked as occupied.
-    val records = weapon.getItemAlterationRecords()
-        .filterNot { gemAlterationOwner(it.alteration.name, slots.keys) == slotId } +
-        alterations.map { RecordedAlteration(it) }
+    val existingRecords = weapon.getItemAlterationRecords()
+        .filterNot { gemAlterationOwner(it.alteration.name, slots.keys) == slotId }
+        .mapIndexed { index, record -> index to record }
+        .sortedBy { (index, record) -> record.order ?: index.toLong() }
+        .mapIndexed { index, (_, record) -> record.copy(order = index.toLong()) }
+    val nextOrder = existingRecords.size.toLong()
+    val records = existingRecords + alterations.mapIndexed { index, alteration ->
+        RecordedAlteration(alteration, order = nextOrder + index)
+    }
 
     val backup = weapon.clone()
     val tag = weapon.getItemTag()
     writeAlterationRecordsToTag(tag, records)
-    writeGemSlotToTag(tag, slotId, gemId, gem)
+    // A socket owns one gem, even when the source stack contains several.
+    writeGemSlotToTag(tag, slotId, gemId, gem.clone().apply { amount = 1 })
     tag.saveTo(weapon)
 
     return try {
@@ -248,9 +303,9 @@ fun socketGem(
  * Removes the gem in [slotId] from [weapon]. Mutates and returns [weapon];
  * optionally gives the extracted gem back to [player].
  *
- * Order matters and is deliberately: resolve the returned gem first -> reverse persisted
- * effects -> drop the gem's alteration records and slot state -> rebuild once -> hand the gem
- * back. Resolving/rebuilding **before** clearing the state is what keeps the gem from being
+ * Order matters and is deliberately: resolve the returned gem and verify inventory capacity
+ * first -> reverse persisted effects -> drop the gem's alteration records and slot state ->
+ * rebuild once -> hand the gem back. Resolving/rebuilding **before** clearing the state is what keeps the gem from being
  * destroyed when the rebuild fails: the slot is only cleared once the item is known to build.
  *
  * Rebuilding *after* clearing the records is what actually removes the gem: every
@@ -275,40 +330,61 @@ fun unsocketGem(player: Player?, weapon: ItemStack, slotId: String, returnGem: B
     //    slot stays untouched, otherwise the gem would be destroyed without a trace.
     var gemToReturn: ItemStack? = null
     if (returnGem) {
-        if (player == null) {
-            warningS("Unsocketing gem from slot '$slotId' without a player; the gem item cannot be returned and is lost")
-        } else {
-            gemToReturn = socketed.itemPayload?.let { decodeGemItem(it) }
-                ?: socketed.gemId?.let { sertralineItemBuilder(it, player) }
-            if (socketed.gemId != null && gemToReturn == null) {
-                severeS("Cannot restore gem '${socketed.gemId}' from slot '$slotId' (template missing or build failed); the slot was left untouched")
+        if (player == null) return GemUnsocketResult.PLAYER_REQUIRED
+        gemToReturn = resolveGemReturn(
+            socketed.itemPayload,
+            socketed.gemId,
+            ::decodeGemItem,
+            { gemId -> sertralineItemBuilder(gemId, player) },
+        ) { item, expectedGemId ->
+            !item.isNotExist() && item.amount == 1 && if (expectedGemId != null) {
+                item.getSertralineId() == expectedGemId
+            } else {
+                item.getSertralineId() != null && item.getGemDefinition() != null
+            }
+        }
+        if (gemToReturn == null) {
+            severeS("Cannot restore gem from slot '$slotId' (payload or template missing/invalid); the slot was left untouched")
+            return GemUnsocketResult.INTERNAL_ERROR
+        }
+    }
+
+    if (returnGem && gemToReturn != null && player != null && !canFit(player, gemToReturn!!)) {
+        return GemUnsocketResult.INVENTORY_FULL
+    }
+
+    // Ownership by longest matching prefix, see socketGem.
+    val knownSlots = slots.keys + weapon.getUsedGemSlots()
+    val rebasePlan = planGemAlterationRebase(weapon.getItemAlterationRecords(), slotId, knownSlots)
+
+    // 1) Reverse folded (persisted) effects on a working copy. Do not commit a partial
+    //    rollback: every persisted effect must be reversed before the slot can be cleared.
+    val backup = weapon.clone()
+    val working = weapon.clone()
+    for (record in rebasePlan.orderedRecords.asReversed()) {
+        if (record.persisted && record.alteration.isPersistentTarget()) {
+            try {
+                revertPersistedAlteration(working, record)
+            } catch (e: Throwable) {
+                severeS("Failed to revert persisted gem alteration '${record.alteration.name}'; the slot was left untouched: ${e.message}")
                 return GemUnsocketResult.INTERNAL_ERROR
             }
         }
     }
 
-    // Ownership by longest matching prefix, see socketGem.
-    val knownSlots = slots.keys + weapon.getUsedGemSlots()
-    val records = weapon.getItemAlterationRecords()
-    val (gemRecords, others) = records.partition {
-        gemAlterationOwner(it.alteration.name, knownSlots) == slotId
-    }
+    // All folded records were removed from the baseline above. Replay the remaining
+    // persistent alterations through the normal build pipeline so their snapshots are
+    // refreshed against that baseline and their effects remain independent of removal order.
+    val others = rebasePlan.replayRecords
 
-    // 1) Reverse folded (persisted) effects in sertraline_data. SET restores its recorded
-    //    previous value, ADD applies the negation.
-    for (record in gemRecords) {
-        if (record.persisted && record.alteration.isPersistentTarget()) {
-            runCatching { revertPersistedAlteration(weapon, record) }
-                .onFailure { devLog("Failed to revert persisted gem alteration '${record.alteration.name}': ${it.message}") }
-        }
-    }
-
-    // 2) Drop the gem's records and the slot state in ONE tag save, before the rebuild.
-    val backup = weapon.clone()
-    val tag = weapon.getItemTag()
+    // 2) Drop the gem's records and slot state together, before rebuilding.
+    val tag = working.getItemTag()
     writeAlterationRecordsToTag(tag, others)
     clearGemSlotFromTag(tag, slotId)
-    tag.saveTo(weapon)
+    tag.saveTo(working)
+    weapon.type = working.type
+    weapon.itemMeta = working.itemMeta
+    working.getItemTag(true).saveTo(weapon)
 
     // 3) Single rebuild on the cleaned NBT — no gem effect is replayed, so the item is
     //    genuinely back to its gem-free state and the slot lore shows as empty.
@@ -325,12 +401,12 @@ fun unsocketGem(player: Player?, weapon: ItemStack, slotId: String, returnGem: B
     }
 
     if (gemToReturn != null && player != null) {
-        if (player.inventory.firstEmpty() == null) {
-            warningS("Inventory of ${player.name} is full; gem '${socketed.gemId}' from slot '$slotId' is dropped on the ground")
+        player.inventory.addItem(gemToReturn!!).values.forEach { overflow ->
+            warningS("Unexpected inventory overflow while returning gem '${socketed.gemId}' from slot '$slotId' to ${player.name}; dropping overflow")
+            player.world.dropItem(player.location, overflow)
         }
-        player.giveItem(gemToReturn!!)
     }
-    devLog("Unsocketed gem from slot '$slotId' (${gemRecords.size} alterations removed)")
+    devLog("Unsocketed gem from slot '$slotId' (${rebasePlan.removedRecords.size} alterations removed)")
     return GemUnsocketResult.SUCCESS
 }
 
@@ -407,6 +483,21 @@ fun copyGemStateToTag(tag: ItemTag, from: ItemStack?) {
 }
 
 // ---------- Item (de)serialization helpers ----------
+
+/** Checks capacity on a cloned inventory so an unsocket cannot clear its slot then drop the gem. */
+private fun canFit(player: Player, item: ItemStack): Boolean {
+    var remaining = item.amount
+    val maxStack = item.maxStackSize.coerceAtLeast(1)
+    for (existing in player.inventory.storageContents) {
+        if (existing == null || existing.type == Material.AIR || existing.type.name.endsWith("_AIR")) {
+            remaining -= maxStack
+        } else if (existing.isSimilar(item)) {
+            remaining -= (existing.maxStackSize - existing.amount).coerceAtLeast(0)
+        }
+        if (remaining <= 0) return true
+    }
+    return false
+}
 
 /** Serializes a gem stack for the `item` NBT node; null when serialization is not possible. */
 internal fun encodeGemItem(item: ItemStack?): ByteArray? {

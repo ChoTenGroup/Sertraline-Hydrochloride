@@ -12,15 +12,19 @@ fun interface ItemProcessor {
 }
 
 class ItemProcessorManager {
-    // LinkedHashMap preserves insertion order
-    private val processors = LinkedHashMap<String, ItemProcessor>()
+    // Publish immutable ordered snapshots so reload registration cannot race item builds.
+    @Volatile
+    private var processors: Map<String, ItemProcessor> = emptyMap()
+    private val mutationLock = Any()
 
     /** Processor names already reported as binary-incompatible (warn once, not per build). */
     private val reportedIncompatible: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     // Register a processor by name as the key, for easier management
     fun registerProcessor(name: String, processor: ItemProcessor) {
-        if (SertralineSettings.rawBoolean("modules.$name.feature", true)) processors[name] = processor
+        if (SertralineSettings.rawBoolean("modules.$name.feature", true)) synchronized(mutationLock) {
+            processors = LinkedHashMap(processors).apply { put(name, processor) }
+        }
     }
 
     /**
@@ -30,17 +34,23 @@ class ItemProcessorManager {
      * Sertraline modules, so the per-module switch must not be able to silently disable them.
      */
     fun forceRegisterProcessor(name: String, processor: ItemProcessor) {
-        processors[name] = processor
+        synchronized(mutationLock) {
+            processors = LinkedHashMap(processors).apply { put(name, processor) }
+        }
     }
 
     // Remove a processor
     fun unregisterProcessor(name: String) {
-        processors.remove(name)
+        synchronized(mutationLock) {
+            processors = LinkedHashMap(processors).apply { remove(name) }
+        }
         reportedIncompatible.remove(name)
     }
 
     fun unregisterAllProcessor() {
-        processors.clear()
+        synchronized(mutationLock) {
+            processors = emptyMap()
+        }
         reportedIncompatible.clear()
     }
 
@@ -54,7 +64,7 @@ class ItemProcessorManager {
     fun processItem(item: AbstractSItem, itemStack: ItemStack, player: Player?): ItemStack {
         if (!item.shouldAdapt) return itemStack
         var currentItem = itemStack
-        for (processor in processors) {
+        for (processor in processors.entries) {
             if (!item.config.contains(processor.key)) continue
             currentItem = try {
                 processor.value.process(item, currentItem, player)

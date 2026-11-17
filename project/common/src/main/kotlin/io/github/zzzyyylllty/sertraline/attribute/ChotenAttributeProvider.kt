@@ -6,6 +6,7 @@ import io.github.zzzyyylllty.chotentech.attribute.data.AttributeSlot
 import io.github.zzzyyylllty.chotentech.attribute.data.ModifierSource
 import io.github.zzzyyylllty.chotentech.attribute.data.ModifierType
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
+import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import io.github.zzzyyylllty.sertraline.util.serialize.generateUUID
 import org.bukkit.Bukkit
@@ -17,7 +18,7 @@ class ChotenAttributeProvider : AttributeProvider {
 
     override val name: String = "choten"
 
-    private val appliedModifiers = ConcurrentHashMap<UUID, MutableSet<UUID>>()
+    private val appliedModifiers = ConcurrentHashMap<UUID, MutableMap<UUID, AttributeModifier>>()
 
     companion object {
         /**
@@ -101,15 +102,8 @@ class ChotenAttributeProvider : AttributeProvider {
         val api = ChoTenAttributeAPI.instance
         val playerUuid = player.uniqueId
 
-        // Remove old modifiers
-        appliedModifiers[playerUuid]?.let { uuids ->
-            for (modUuid in uuids) {
-                api.removeModifier(playerUuid, modUuid)
-            }
-            uuids.clear()
-        }
-
-        val newModifiers = mutableSetOf<UUID>()
+        val oldModifiers = appliedModifiers[playerUuid].orEmpty().toMap()
+        val newModifiers = linkedMapOf<UUID, AttributeModifier>()
 
         itemList.forEach { (slot, itemBound) ->
             val sItem = itemBound.sItem
@@ -163,13 +157,38 @@ class ChotenAttributeProvider : AttributeProvider {
                     null
                 )
 
-                api.addModifier(playerUuid, modifier)
-                newModifiers.add(modifierUuid)
+                newModifiers[modifierUuid] = modifier
             }
         }
 
-        appliedModifiers.getOrPut(playerUuid) { mutableSetOf() }.addAll(newModifiers)
-        api.updatePlayerAttributes(player)
+        val added = mutableListOf<UUID>()
+        val removed = mutableListOf<UUID>()
+        try {
+            for ((modifierUuid, modifier) in newModifiers) {
+                val old = oldModifiers[modifierUuid]
+                if (old == modifier) continue
+                if (old != null) {
+                    api.removeModifier(playerUuid, modifierUuid)
+                    removed += modifierUuid
+                }
+                api.addModifier(playerUuid, modifier)
+                added += modifierUuid
+            }
+            for (modifierUuid in oldModifiers.keys - newModifiers.keys) {
+                api.removeModifier(playerUuid, modifierUuid)
+                removed += modifierUuid
+            }
+            if (newModifiers.isEmpty()) appliedModifiers.remove(playerUuid)
+            else appliedModifiers[playerUuid] = newModifiers.toMutableMap()
+            api.updatePlayerAttributes(player)
+        } catch (e: Throwable) {
+            added.forEach { runCatching { api.removeModifier(playerUuid, it) } }
+            removed.forEach { modifierUuid -> oldModifiers[modifierUuid]?.let { old ->
+                runCatching { api.addModifier(playerUuid, old) }
+            } }
+            appliedModifiers[playerUuid] = oldModifiers.toMutableMap()
+            throw e
+        }
 
         devLog("ChotenAttribute refresh complete for ${player.name}, applied ${newModifiers.size} modifiers")
     }
@@ -183,6 +202,24 @@ class ChotenAttributeProvider : AttributeProvider {
      * removal) to keep the map bounded.
      */
     fun forget(playerUuid: UUID) {
-        appliedModifiers.remove(playerUuid)
+        val tracked = appliedModifiers[playerUuid] ?: return
+        if (!available) {
+            appliedModifiers.remove(playerUuid, tracked)
+            return
+        }
+
+        val api = ChoTenAttributeAPI.instance
+        val failed = linkedMapOf<UUID, AttributeModifier>()
+        tracked.forEach { (modifierUuid, modifier) ->
+            try {
+                api.removeModifier(playerUuid, modifierUuid)
+            } catch (e: Exception) {
+                failed[modifierUuid] = modifier
+                warningS("[Sertraline] Failed to remove ChoTen modifier $modifierUuid for player $playerUuid: ${e.message}")
+            }
+        }
+
+        if (failed.isEmpty()) appliedModifiers.remove(playerUuid, tracked)
+        else appliedModifiers[playerUuid] = failed
     }
 }

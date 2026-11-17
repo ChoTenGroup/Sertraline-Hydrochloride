@@ -12,7 +12,12 @@ import java.util.concurrent.TimeUnit
 
 class PrivateManager {
 
+    private class PersistentItemCache : ConcurrentHashMap<String, ModernSItem>() {
+        var fullyLoadedFromDatabase: Boolean = false
+    }
+
     private val temporaryCache = ConcurrentHashMap<String, ConcurrentHashMap<String, ModernSItem>>()
+    private val persistentLocks = Array(64) { Any() }
 
     // Caffeine-backed cache: evicts UUID entries after 30 min of no access, preventing
     // unbounded memory growth from offline players' persistent items.
@@ -23,11 +28,11 @@ class PrivateManager {
     // relocated dependency (io.github.zzzyyylllty.sertraline.dep.caffeine) that only appears at
     // LifeCycle.INIT, i.e. after CONST — building this eagerly throws NoClassDefFoundError and
     // prevents the plugin from loading at all.
-    private val persistentCache: java.util.concurrent.ConcurrentMap<String, ConcurrentHashMap<String, ModernSItem>> by lazy {
+    private val persistentCache: java.util.concurrent.ConcurrentMap<String, PersistentItemCache> by lazy {
         Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterAccess(30, TimeUnit.MINUTES)
-            .build<String, ConcurrentHashMap<String, ModernSItem>>()
+            .build<String, PersistentItemCache>()
             .asMap()
     }
 
@@ -35,13 +40,13 @@ class PrivateManager {
         val normalizedId = normalizePrivateItemId(id)
         return when (sub) {
             SubManagerType.TEMPORARY -> temporaryCache[uuid]?.get(normalizedId)
-            SubManagerType.PERSISTENT -> {
+            SubManagerType.PERSISTENT -> withPersistentLock(uuid) {
                 // Write the DB load result back to the cache to avoid repeated getItem calls hitting the database
-                val map = persistentCache.computeIfAbsent(uuid) { ConcurrentHashMap() }
+                val map = persistentCache.computeIfAbsent(uuid) { PersistentItemCache() }
                 map[normalizedId] ?: loadFromDB(
                     uuid,
                     normalizedId,
-                    id.takeUnless { it == normalizedId }
+                    privateItemIdCandidates(id).firstOrNull { it != normalizedId }
                 )?.also { map[normalizedId] = it }
             }
         }
@@ -50,11 +55,17 @@ class PrivateManager {
     fun getAll(uuid: String, sub: SubManagerType): Map<String, ModernSItem> {
         return when (sub) {
             SubManagerType.TEMPORARY -> temporaryCache[uuid] ?: emptyMap()
-            SubManagerType.PERSISTENT -> {
-                val cached = persistentCache[uuid]
-                if (cached != null) return cached
-                loadAllFromDB(uuid)
-                persistentCache[uuid] ?: emptyMap()
+            SubManagerType.PERSISTENT -> withPersistentLock(uuid) {
+                val cache = persistentCache.computeIfAbsent(uuid) { PersistentItemCache() }
+                if (!cache.fullyLoadedFromDatabase) {
+                    val loaded = loadAllFromDB(uuid)
+                    if (loaded != null) {
+                        cache.clear()
+                        cache.putAll(loaded)
+                        cache.fullyLoadedFromDatabase = true
+                    }
+                }
+                cache
             }
         }
     }
@@ -69,19 +80,26 @@ class PrivateManager {
                     throw IllegalStateException("Item $normalizedId already exists in private/temporary for UUID $uuid")
                 }
             }
-            SubManagerType.PERSISTENT -> {
-                val map = persistentCache.computeIfAbsent(uuid) { ConcurrentHashMap() }
+            SubManagerType.PERSISTENT -> withPersistentLock(uuid) {
+                val map = persistentCache.computeIfAbsent(uuid) { PersistentItemCache() }
+                if (map.containsKey(normalizedId)) {
+                    throw IllegalStateException("Item $normalizedId already exists in private/persistent for UUID $uuid")
+                }
+
+                val existingId = privateItemIdCandidates(id).firstOrNull { candidateId ->
+                    DatabaseManager.privateItemMapper.existsByKey(privateItemProbe(uuid, candidateId))
+                }
+                if (existingId != null) {
+                    throw IllegalStateException("Item $existingId already exists in private/persistent for UUID $uuid")
+                }
+
                 if (map.putIfAbsent(normalizedId, normalizedItem) != null) {
                     throw IllegalStateException("Item $normalizedId already exists in private/persistent for UUID $uuid")
                 }
-                // Upsert, not insert: the cache is evicted on quit (evict()), so re-creating an id
-                // whose row still exists in the database used to hit a primary-key conflict and
-                // abort with "Failed to save item …". The in-memory guard above is what enforces
-                // "already exists" for this session.
                 try {
-                    saveOrUpdateToDB(uuid, normalizedId, normalizedItem, "")
+                    insertToDB(uuid, normalizedId, normalizedItem, "")
                 } catch (e: Exception) {
-                    map.remove(normalizedId)
+                    map.remove(normalizedId, normalizedItem)
                     throw e
                 }
             }
@@ -102,11 +120,13 @@ class PrivateManager {
                 val map = temporaryCache.computeIfAbsent(uuid) { ConcurrentHashMap() }
                 map.put(normalizedId, normalizedItem)
             }
-            SubManagerType.PERSISTENT -> {
-                val map = persistentCache.computeIfAbsent(uuid) { ConcurrentHashMap() }
-                val previous = map[normalizedId] ?: loadFromDB(uuid, normalizedId)
+            SubManagerType.PERSISTENT -> withPersistentLock(uuid) {
+                val map = persistentCache.computeIfAbsent(uuid) { PersistentItemCache() }
+                val legacyId = privateItemIdCandidates(id).firstOrNull { it != normalizedId }
+                val previous = map[normalizedId] ?: loadFromDB(uuid, normalizedId, legacyId)
                 try {
                     saveOrUpdateToDB(uuid, normalizedId, normalizedItem, "")
+                    if (legacyId != null) deleteLegacyRowAfterMigration(uuid, legacyId)
                     map[normalizedId] = normalizedItem
                     previous
                 } catch (e: Exception) {
@@ -123,29 +143,29 @@ class PrivateManager {
 
     fun deleteItem(uuid: String, id: String, sub: SubManagerType): Boolean {
         val normalizedId = normalizePrivateItemId(id)
-        val legacyId = id.takeUnless { it == normalizedId }
         return when (sub) {
             SubManagerType.TEMPORARY -> {
                 temporaryCache[uuid]?.remove(normalizedId) != null
             }
-            SubManagerType.PERSISTENT -> {
-                val cacheRemoved = persistentCache[uuid]?.remove(normalizedId) != null
-                // Used to return a hardcoded `true`: callers could not tell "deleted" from
-                // "nothing existed", and a failed DB delete looked successful.
-                val dbRemoved = deleteFromDB(uuid, normalizedId, legacyId)
-                cacheRemoved || dbRemoved
+            SubManagerType.PERSISTENT -> withPersistentLock(uuid) {
+                val cache = persistentCache[uuid]
+                val cached = cache?.containsKey(normalizedId) == true
+                val candidates = privateItemIdCandidates(id)
+                val dbRemoved = deleteFromDB(uuid, candidates.first(), candidates.getOrNull(1))
+                if (cached || dbRemoved) cache?.remove(normalizedId)
+                cached || dbRemoved
             }
         }
     }
 
     fun clearAll(uuid: String) {
         temporaryCache.remove(uuid)
-        persistentCache.remove(uuid)
+        withPersistentLock(uuid) { persistentCache.remove(uuid) }
     }
 
     /** Evict a UUID's persistent cache entry on player quit. DB data is untouched. */
     fun evict(uuid: String) {
-        persistentCache.remove(uuid)
+        withPersistentLock(uuid) { persistentCache.remove(uuid) }
     }
 
     fun shutdown() {
@@ -157,8 +177,7 @@ class PrivateManager {
         return try {
             val ids = sequenceOf(id, legacyId).filterNotNull().distinct()
             for (candidateId in ids) {
-                val probe = PrivateItem(uuid = uuid, itemId = candidateId, itemData = "", subPath = "", createdAt = 0L)
-                val result = DatabaseManager.privateItemMapper.findOneByKey(probe) ?: continue
+                val result = DatabaseManager.privateItemMapper.findOneByKey(privateItemProbe(uuid, candidateId)) ?: continue
                 // 单条数据反序列化失败只跳过该条，不能让整个查找（含 legacy 回退）短路
                 val restored = deserializeSertraline(result.itemData)
                 if (restored == null) {
@@ -174,11 +193,13 @@ class PrivateManager {
         }
     }
 
-    private fun loadAllFromDB(uuid: String) {
-        try {
+    private fun loadAllFromDB(uuid: String): Map<String, ModernSItem>? {
+        return try {
             val items = DatabaseManager.privateItemMapper.findAll(uuid)
             val map = ConcurrentHashMap<String, ModernSItem>()
-            for (pi in items) {
+            // If old unprefixed and canonical rows coexist, the canonical value must win
+            // regardless of database result order.
+            for (pi in items.sortedBy { it.itemId == normalizePrivateItemId(it.itemId) }) {
                 try {
                     val normalizedId = normalizePrivateItemId(pi.itemId)
                     map[normalizedId] = normalizeItem(normalizedId, deserializeSertraline(pi.itemData) ?: continue)
@@ -186,25 +207,55 @@ class PrivateManager {
                     warningS("[PrivateManager] Failed to deserialize item '${pi.itemId}' for UUID $uuid: ${e.message}")
                 }
             }
-            persistentCache[uuid] = map
+            map
         } catch (e: Exception) {
             warningS("[PrivateManager] Failed to load all items for UUID $uuid: ${e.message}")
+            null
+        }
+    }
+
+    private fun insertToDB(uuid: String, id: String, item: ModernSItem, subPath: String) {
+        try {
+            DatabaseManager.privateItemMapper.insert(toPrivateItem(uuid, id, item, subPath))
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to create item $id in database: ${e.message}", e)
         }
     }
 
     private fun saveOrUpdateToDB(uuid: String, id: String, item: ModernSItem, subPath: String) {
         try {
-            val json = item.serialize() ?: throw IllegalStateException("Failed to serialize item $id")
-            val entity = PrivateItem(
-                uuid = uuid,
-                itemId = id,
-                itemData = json,
-                subPath = subPath,
-                createdAt = System.currentTimeMillis()
-            )
-            DatabaseManager.privateItemMapper.upsertBatch(listOf(entity))
+            DatabaseManager.privateItemMapper.upsertBatch(listOf(toPrivateItem(uuid, id, item, subPath)))
         } catch (e: Exception) {
             throw IllegalStateException("Failed to update item $id in database: ${e.message}")
+        }
+    }
+
+    private fun toPrivateItem(uuid: String, id: String, item: ModernSItem, subPath: String): PrivateItem {
+        val json = item.serialize() ?: throw IllegalStateException("Failed to serialize item $id")
+        return PrivateItem(
+            uuid = uuid,
+            itemId = id,
+            itemData = json,
+            subPath = subPath,
+            createdAt = System.currentTimeMillis()
+        )
+    }
+
+    private fun privateItemProbe(uuid: String, id: String): PrivateItem =
+        PrivateItem(uuid = uuid, itemId = id, itemData = "", subPath = "", createdAt = 0L)
+
+    private fun deleteLegacyRowAfterMigration(uuid: String, legacyId: String) {
+        val probe = privateItemProbe(uuid, legacyId)
+        try {
+            if (DatabaseManager.privateItemMapper.existsByKey(probe)) {
+                DatabaseManager.privateItemMapper.deleteByKey(probe)
+                check(!DatabaseManager.privateItemMapper.existsByKey(probe)) {
+                    "Legacy database row '$legacyId' still exists after migration"
+                }
+            }
+        } catch (e: Exception) {
+            // The canonical row is already saved. Keep it authoritative on later getAll loads.
+            warningS("[PrivateManager] Failed to remove legacy item '$legacyId' for UUID $uuid after update: ${e.message}")
         }
     }
 
@@ -224,13 +275,16 @@ class PrivateManager {
                 // deleteByKey() returns Unit, so existence has to be probed explicitly.
                 if (DatabaseManager.privateItemMapper.existsByKey(probe)) {
                     DatabaseManager.privateItemMapper.deleteByKey(probe)
+                    check(!DatabaseManager.privateItemMapper.existsByKey(probe)) {
+                        "Database row '$candidateId' still exists after deletion"
+                    }
                     removed = true
                 }
             }
             removed
         } catch (e: Exception) {
             warningS("[PrivateManager] Failed to delete item '$id' (legacy=$legacyId) for UUID $uuid: ${e.message}")
-            false
+            throw IllegalStateException("Failed to delete private item '$id' for UUID $uuid", e)
         }
     }
 
@@ -239,4 +293,7 @@ class PrivateManager {
         val copy = item.deepCopy()
         return ModernSItem(id, copy.data, copy.config)
     }
+
+    private inline fun <T> withPersistentLock(uuid: String, action: () -> T): T =
+        synchronized(persistentLocks[(uuid.hashCode() and Int.MAX_VALUE) % persistentLocks.size], action)
 }

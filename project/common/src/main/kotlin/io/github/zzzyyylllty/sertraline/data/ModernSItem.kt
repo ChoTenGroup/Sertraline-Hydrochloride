@@ -137,61 +137,14 @@ data class ModernSItem(
     ).also { it.shouldAdapt = shouldAdapt }
 
     /**
-     * Whether the config contains ${...}$ placeholders
-     * Computed lazily once and cached at item load time
+     * These maps are public and may be mutated directly, including nested maps, so caching these
+     * flags can leave the serializer on the wrong fast path. Compute from the current contents.
      */
-    @Transient
-    @Volatile
-    private var _hasPlaceholders: Boolean? = null
     override val hasPlaceholders: Boolean
-        get() {
-            var cached = _hasPlaceholders
-            if (cached == null) {
-                cached = configContainsPlaceholders(config) || configContainsPlaceholders(data)
-                _hasPlaceholders = cached
-            }
-            return cached
-        }
+        get() = configContainsPlaceholders(config) || configContainsPlaceholders(data)
 
-    /**
-     * Whether the config contains sertraline:dynamics dynamic data
-     */
-    @Transient
-    @Volatile
-    private var _hasDynamics: Boolean? = null
     override val hasDynamics: Boolean
-        get() {
-            var cached = _hasDynamics
-            if (cached == null) {
-                cached = getDeepData("sertraline:dynamics") != null
-                _hasDynamics = cached
-            }
-            return cached
-        }
-
-    /**
-     * Drops both memoized flags.
-     *
-     * The flags are computed once and cached, but the build path writes `sertraline:vars` /
-     * `sertraline:context` into a template copy *after* the flags were read, and the item cache
-     * may hand the same object around. Without invalidation a later `itemSerializer` call could
-     * keep taking the "no placeholders, no dynamics" fast path and skip rendering a value that
-     * was just written.
-     */
-    private fun invalidateContentFlags() {
-        _hasPlaceholders = null
-        _hasDynamics = null
-    }
-
-    override fun setDeepData(location: String, value: Any?) {
-        super.setDeepData(location, value)
-        invalidateContentFlags()
-    }
-
-    override fun setMajorData(location: String, value: Any?) {
-        super.setMajorData(location, value)
-        invalidateContentFlags()
-    }
+        get() = getDeepData("sertraline:dynamics") != null
 
     /**
      * 从 config 的 `itemdef.material` 或 data 的 `minecraft:material` / `xbuilder:material` 解析基础材料。
@@ -263,11 +216,11 @@ fun deepCopyMap(original: LinkedHashMap<String, Any?>): LinkedHashMap<String, An
 @Suppress("UNCHECKED_CAST")
 private fun deepCopyValue(value: Any?): Any? {
     return when (value) {
-        is LinkedHashMap<*, *> -> deepCopyMap(value as LinkedHashMap<String, Any?>)
-        is Map<*, *> -> LinkedHashMap(value as Map<String, Any?>)
-        is ArrayList<*> -> ArrayList(value.map { deepCopyValue(it) })
-        is List<*> -> value.map { deepCopyValue(it) }
-        is MutableList<*> -> value.map { deepCopyValue(it) }.toMutableList()
+        is Map<*, *> -> LinkedHashMap<Any?, Any?>(value.size).also { copy ->
+            value.forEach { (key, nested) -> copy[key] = deepCopyValue(nested) }
+        }
+        is List<*> -> value.mapTo(ArrayList(value.size)) { deepCopyValue(it) }
+        is Set<*> -> value.mapTo(LinkedHashSet(value.size)) { deepCopyValue(it) }
         else -> value // String, Number, Boolean, null are immutable
     }
 }

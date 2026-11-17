@@ -20,7 +20,7 @@ class ItemManager {
             ManagerType.PUBLIC -> public.getItem(id, sub)
             ManagerType.PRIVATE -> {
                 val resolvedUuid = resolvePrivateUuid(uuid, null)
-                privateManager.getItem(resolvedUuid, normalizePrivateItemId(id), sub)
+                privateManager.getItem(resolvedUuid, id, sub)
             }
         }
     }
@@ -42,12 +42,17 @@ class ItemManager {
         }
     }
 
+    /** Binary-compatible API retained for existing integrations. */
     fun deleteItem(type: ManagerType, sub: SubManagerType, id: String, uuid: String? = null) {
-        when (type) {
+        deleteItemResult(type, sub, id, uuid)
+    }
+
+    fun deleteItemResult(type: ManagerType, sub: SubManagerType, id: String, uuid: String? = null): Boolean {
+        return when (type) {
             ManagerType.PUBLIC -> public.remove(id, sub)
             ManagerType.PRIVATE -> {
                 val resolvedUuid = resolvePrivateUuid(uuid, null)
-                privateManager.deleteItem(resolvedUuid, normalizePrivateItemId(id), sub)
+                privateManager.deleteItem(resolvedUuid, id, sub)
             }
         }
     }

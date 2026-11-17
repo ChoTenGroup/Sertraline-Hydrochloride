@@ -53,4 +53,5 @@ if (platform == "legacy12") {
         "**/listener/recipeBookListener.kt",
         "**/listener/sertraline/itemRecipe.kt"
     )
+    sourceSets["test"].kotlin.exclude("**/recipe/ItemResolverChoiceTest.kt")
 }

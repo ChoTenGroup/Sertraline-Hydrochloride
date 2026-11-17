@@ -66,18 +66,27 @@ interface AbstractSItem {
     fun getMajorData(location: String): Any? = data[location] as? Map<*, *>?
 
     fun setDeepData(location: String, value: Any?) {
-        val split = location.split(":")
-        if (split.size >= 2) {
-            val major = split[0]
-            val section = location.removePrefix("${split[0]}:")
-            // 缺失时创建 major map，避免对没有该命名空间段的物品静默失败
-            //（例如 LoreFormatUtil.generateLore 向无 sertraline 段的物品注入 defaultVars）
+        val colonIndex = location.indexOf(':')
+        if (colonIndex <= 0) {
+            data[location] = value
+            return
+        }
+
+        val major = location.substring(0, colonIndex)
+        val segments = location.substring(colonIndex + 1).split('.')
+        if (segments.any { it.isEmpty() }) return
+
+        @Suppress("UNCHECKED_CAST")
+        val majorData = (data[major] as? Map<String, Any?>)?.toMutableMap() ?: linkedMapOf()
+        var current = majorData
+        for (segment in segments.dropLast(1)) {
             @Suppress("UNCHECKED_CAST")
-            val cvalue = (data[major] as? Map<*, *>)?.toMutableMap() ?: linkedMapOf<Any?, Any?>()
-            cvalue[section] = value
-            @Suppress("UNCHECKED_CAST")
-            data[major] = cvalue as MutableMap<String, Any?>
-        } else data[location] = value
+            val child = (current[segment] as? Map<String, Any?>)?.toMutableMap() ?: linkedMapOf()
+            current[segment] = child
+            current = child
+        }
+        current[segments.last()] = value
+        data[major] = majorData
     }
 
     fun setMajorData(location: String, value: Any?) {

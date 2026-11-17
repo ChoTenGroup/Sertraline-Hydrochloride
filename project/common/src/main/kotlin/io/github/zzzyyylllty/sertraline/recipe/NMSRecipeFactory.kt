@@ -147,12 +147,6 @@ object NMSRecipeFactory {
         getDeclaredMethodCompat(clazzIngredient, listOf("of", "a"), null, arrayClass)
     }
 
-    // RecipeItemStack.ofStacks(List<ItemStack>) — exact ingredient: preserves full components, shown in the recipe book by component;
-    // crafting tests require completely identical components (mismatch risk on placeholder items, only used when exact is explicitly set)
-    private val methodIngredientOfStacksExact by lazy {
-        getDeclaredMethodCompat(clazzIngredient, listOf("ofStacks", "a"), null, List::class.java)
-    }
-
     // Ingredient.of(TagKey<Item>) — neither 1.21.4 platform has this method,
     // so instead go through Registry.getTagOrEmpty(TagKey) → HolderSet.direct(List) → of(HolderSet)
     private val clazzTagKey by lazy { getClazz("net.minecraft.tags.TagKey") }
@@ -191,15 +185,12 @@ object NMSRecipeFactory {
      * - For a concrete item, uses Ingredient.of(ItemLike...) (matches the Item type)
      */
     fun createIngredient(ingredient: RecipeIngredient): Any {
+        validateNmsIngredient(ingredient)
         return when (ingredient) {
             is RecipeIngredient.Item -> {
                 val stacks = resolveItemStacks(ingredient.itemId, ingredient.amount)
                 if (stacks.isEmpty()) throw IllegalArgumentException("No items resolved for: ${ingredient.itemId}")
                 val nmsStacks = stacks.map { toNMSStack(it) }
-                if (ingredient.exact) {
-                    // Exact ingredient: full components (including lore, etc.) will show in the recipe book and crafting interface
-                    return methodIngredientOfStacksExact.invoke(null, nmsStacks)
-                }
                 val items = toNMSItems(nmsStacks)
                 methodIngredientOfStacks.invoke(null, createItemLikeArray(items))
             }

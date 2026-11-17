@@ -1,7 +1,11 @@
 package io.github.zzzyyylllty.sertraline.data
 
+import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.util.toBooleanTolerance
+import org.bukkit.command.CommandSender
+import taboolib.common.platform.function.adaptCommandSender
+import taboolib.module.lang.asLangText
 import java.util.concurrent.ConcurrentHashMap
 
 // ---------- Gem slot / gem definitions ----------
@@ -14,9 +18,46 @@ data class GemSlotDefinition(
     val colorPattern: Regex?, // null = accepts every gem color
     /** Whether this socket may be filled by the click interaction (`click: false` to forbid). */
     val clickSocket: Boolean = true,
+    /** False when `name` was omitted and the language node may supply it. */
+    val nameConfigured: Boolean = true,
+    /** False when `desc` was omitted and the language node may supply it. */
+    val descConfigured: Boolean = true,
 ) {
     fun accepts(color: String): Boolean = colorPattern?.matches(color) ?: true
 }
+
+/**
+ * Resolves a slot label with item configuration taking precedence over language text.
+ * Missing language nodes fall back to the slot id for names and an empty string for descriptions.
+ */
+internal fun resolveGemSlotLabel(
+    id: String,
+    label: String,
+    configuredText: String?,
+    languageText: (String) -> String,
+): String {
+    if (configuredText != null) return configuredText
+    val node = "Gem_Slot_${id}_$label"
+    val translated = languageText(node)
+    if (translated != node) return translated
+    return if (label == "Name") id else ""
+}
+
+private fun GemSlotDefinition.resolveLabel(
+    label: String,
+    text: String,
+    configured: Boolean,
+    sender: CommandSender?,
+): String = resolveGemSlotLabel(id, label, text.takeIf { configured }) { node ->
+    if (sender == null) Sertraline.console.asLangText(node)
+    else adaptCommandSender(sender).asLangText(node)
+}
+
+fun GemSlotDefinition.localizedName(sender: CommandSender?): String =
+    resolveLabel("Name", name, nameConfigured, sender)
+
+fun GemSlotDefinition.localizedDesc(sender: CommandSender?): String =
+    resolveLabel("Desc", desc, descConfigured, sender)
 
 /** Definition of the gem behaviour declared under `sertraline:gem` of a gem item. */
 data class GemDefinition(
@@ -121,13 +162,17 @@ fun AbstractSItem.getGemSlotDefinitions(): Map<String, GemSlotDefinition> {
             }
             return@mapNotNull null
         }
+        val configuredName = map["name"]?.toString()
+        val configuredDesc = map["desc"]?.toString()
         val pattern = map["gem-color"]?.toString()?.takeIf { it.isNotBlank() }?.let { gemColorPattern(it, id) }
         id to GemSlotDefinition(
             id = id,
-            name = map["name"]?.toString() ?: id,
-            desc = map["desc"]?.toString() ?: "",
+            name = configuredName ?: id,
+            desc = configuredDesc ?: "",
             colorPattern = pattern,
             clickSocket = map.clickFlag(),
+            nameConfigured = configuredName != null,
+            descConfigured = configuredDesc != null,
         )
     }.toMap(LinkedHashMap())
 }

@@ -55,9 +55,9 @@ data class ComponentFilter(
 sealed class RecipeIngredient {
     /**
      * A specific item, e.g. sertraline:doe_card / minecraft:stone / itemsadder:some_item
-     * @param exact true = exact ingredient (NMS ofStacks): the recipe book shows full components, but the craft test
-     *   requires components to match exactly. Only use for deterministically built items (static items with no
-     *   placeholders); placeholder items would mismatch due to player differences.
+     * @param exact true = exact stack matching for SIMPLE recipes. COMPLEX/NMS recipes cannot express
+     *   component-level exact matching and reject this option. Only use for deterministic items without
+     *   player-dependent placeholders.
      */
     data class Item(val itemId: String, val amount: Int = 1, val exact: Boolean = false) : RecipeIngredient()
 
@@ -66,6 +66,24 @@ sealed class RecipeIngredient {
 
     /** Choice among several */
     data class Choice(val options: List<RecipeIngredient>) : RecipeIngredient()
+}
+
+/** Validates the subset representable by the vanilla NMS Ingredient type. */
+internal fun validateNmsIngredient(ingredient: RecipeIngredient) {
+    when (ingredient) {
+        is RecipeIngredient.Item -> {
+            require(ingredient.amount == 1) {
+                "Recipe ingredient '${ingredient.itemId}' amount ${ingredient.amount} is unsupported; each recipe slot consumes one item"
+            }
+            require(!ingredient.exact) {
+                "Exact ingredient '${ingredient.itemId}' is unsupported by COMPLEX/NMS recipes; use provider: SIMPLE"
+            }
+        }
+        is RecipeIngredient.Tag -> require(ingredient.amount == 1) {
+            "Recipe tag '${ingredient.tagId}' amount ${ingredient.amount} is unsupported; each recipe slot consumes one item"
+        }
+        is RecipeIngredient.Choice -> ingredient.options.forEach(::validateNmsIngredient)
+    }
 }
 
 /**

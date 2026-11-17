@@ -119,13 +119,19 @@ private fun parseOperation(raw: Any?): AlterationOperation {
 data class RecordedAlteration(
     val alteration: SDataAlteration,
     val persisted: Boolean = false,
-    /**
-     * Value of the target before a folded SET was applied. Only recorded for
-     * persistent-target SET alterations, so unsocketing can restore the original
-     * value into `sertraline_data`. Absent for other operations (ADD is reversed
-     * by applying the negated value; REMOVE clears the key).
-     */
+    /** Value of the target before a folded persistent alteration was applied. */
     val previous: Any? = null,
+    /** Distinguishes a known missing value from an old record with no snapshot. */
+    val previousKnown: Boolean = false,
+    /** Whether the target existed before this alteration was folded. */
+    val previousPresent: Boolean = false,
+    /** Stable application order for replaying folded alterations across gem slots. */
+    val order: Long? = null,
+    /** First intermediate node that was missing or non-map and therefore replaced. */
+    val previousParentPath: String? = null,
+    val previousParent: Any? = null,
+    val previousParentPresent: Boolean = false,
+    val previousParentRoot: Boolean = false,
 )
 
 /** 读取物品 NBT 中持久化的实例修改记录（[ALTERATION_TAG]，含 persisted 标记） */
@@ -146,7 +152,39 @@ fun readAlterationRecordsFromNBT(itemStack: ItemStack): List<RecordedAlteration>
                 is String -> p.equals("true", ignoreCase = true)
                 else -> false
             }
-            RecordedAlteration(SDataAlteration(name, key, operation, map["value"]), persisted, map["previous"])
+            val previousKnown = when (val known = map["previous-known"]) {
+                is Number -> known.toInt() != 0
+                is String -> known.equals("true", ignoreCase = true)
+                else -> "previous" in map
+            }
+            val previousPresent = when (val present = map["previous-present"]) {
+                is Number -> present.toInt() != 0
+                is String -> present.equals("true", ignoreCase = true)
+                else -> "previous" in map
+            }
+            val previousParentRoot = when (val root = map["previous-parent-root"]) {
+                is Number -> root.toInt() != 0
+                is String -> root.equals("true", ignoreCase = true)
+                else -> false
+            }
+            val previousParentPath = map["previous-parent-path"]?.toString() ?: if (previousParentRoot) "" else null
+            val previousParentPresent = when (val present = map["previous-parent-present"]) {
+                is Number -> present.toInt() != 0
+                is String -> present.equals("true", ignoreCase = true)
+                else -> "previous-parent" in map
+            }
+            RecordedAlteration(
+                SDataAlteration(name, key, operation, map["value"]),
+                persisted,
+                map["previous"],
+                previousKnown,
+                previousPresent,
+                (map["order"] as? Number)?.toLong(),
+                previousParentPath,
+                map["previous-parent"],
+                previousParentPresent,
+                previousParentRoot,
+            )
         } catch (e: Exception) {
             devLog("Failed to parse alteration '$nbtKey' from NBT: ${e.message}")
             null
@@ -197,6 +235,17 @@ fun writeAlterationRecordsToTag(tag: ItemTag, records: Collection<RecordedAltera
         alteration.value?.let { entry.put("value", transferBooleanToByte(it) as Any) }
         if (record.persisted) entry["persisted"] = 1.toByte()
         record.previous?.let { entry.put("previous", transferBooleanToByte(it) as Any) }
+        if (record.previousKnown) {
+            entry["previous-known"] = 1.toByte()
+            entry["previous-present"] = if (record.previousPresent) 1.toByte() else 0.toByte()
+        }
+        record.previousParentPath?.takeIf { it.isNotEmpty() }?.let { entry["previous-parent-path"] = it }
+        record.previousParent?.let { entry.put("previous-parent", transferBooleanToByte(it) as Any) }
+        if (record.previousParentPath != null) {
+            entry["previous-parent-present"] = if (record.previousParentPresent) 1.toByte() else 0.toByte()
+        }
+        if (record.previousParentRoot) entry["previous-parent-root"] = 1.toByte()
+        record.order?.let { entry["order"] = it }
         compound[alterationNbtKey(alteration.name)] = entry
     }
     tag[ALTERATION_TAG] = compound
@@ -269,12 +318,20 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
                 applied += alteration
                 // NBT 持久化目标：应用后即刻标记为已折叠——sertralineAdapter 会把
                 // 修改后的 vars 写入 sertraline_data，本轮构建后效果永久生效。
-                // SET 到持久化目标时额外记录原值，供拆卸时恢复。
+                // 保存修改前快照，供宝石槽位重排时先撤回再重放。
                 outRecords += if (alteration.isPersistentTarget()) {
-                    val previous = if (alteration.operation == AlterationOperation.SET && record.previous == null) {
-                        readPersistentTargetValue(rebuild, alteration.key)
-                    } else record.previous
-                    record.copy(persisted = true, previous = previous)
+                    val (previousPresent, previous) = readPersistentTargetState(rebuild, alteration.key)
+                    val previousParent = readPersistentParentState(rebuild, alteration.key)
+                    record.copy(
+                        persisted = true,
+                        previous = previous,
+                        previousKnown = true,
+                        previousPresent = previousPresent,
+                        previousParentPath = previousParent?.path,
+                        previousParent = previousParent?.value,
+                        previousParentPresent = previousParent?.present ?: false,
+                        previousParentRoot = previousParent?.path.isNullOrEmpty() && previousParent != null,
+                    )
                 } else record
             }
         }
@@ -290,32 +347,102 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
 
 /**
  * 读取持久化目标当前的 NBT 值（如 `sertraline:vars.test1` -> `sertraline_data.test1`）。
- * 用于 SET 折叠前记录原值。目标不存在时返回 null。
+ * 用于折叠修改前记录目标值。目标不存在时返回 null。
  */
 fun readPersistentTargetValue(itemStack: ItemStack?, key: String): Any? {
-    if (itemStack == null) return null
+    return readPersistentTargetState(itemStack, key).second
+}
+
+private fun readPersistentTargetState(itemStack: ItemStack?, key: String): Pair<Boolean, Any?> {
+    if (itemStack == null) return false to null
+    val prefix = PERSISTENT_ALTERATION_PREFIXES.firstOrNull {
+        key == it || key.startsWith("$it.") || key.startsWith("$it:")
+    } ?: return false to null
+    val remainder = key.removePrefix(prefix).removePrefix(".").removePrefix(":")
+    val tagName = when (prefix) {
+        "sertraline:vars" -> "sertraline_data"
+        else -> return false to null
+    }
+    val root = itemStack.getItemTag(true)[tagName] ?: return false to null
+    if (remainder.isEmpty()) return true to root.parseNBT()
+    val data = runCatching { root.parseMapNBT() }.getOrNull() ?: return false to null
+    var current: Any? = data
+    val segments = remainder.split(".")
+    for (segment in segments.dropLast(1)) {
+        val map = current as? Map<*, *> ?: return false to null
+        if (segment !in map) return false to null
+        current = map[segment]
+    }
+    val map = current as? Map<*, *> ?: return false to null
+    val leaf = segments.last()
+    return (leaf in map) to map[leaf]
+}
+
+internal data class PersistentParentSnapshot(val path: String, val present: Boolean, val value: Any?)
+
+internal fun capturePersistentParentSnapshot(
+    variables: Map<String, Any?>?,
+    remainder: String,
+): PersistentParentSnapshot? {
+    if (remainder.isEmpty()) return null
+    if (variables == null) return PersistentParentSnapshot("", false, null)
+
+    var node: Map<*, *> = variables
+    var path = ""
+    for (segment in remainder.split(".").dropLast(1)) {
+        path = if (path.isEmpty()) segment else "$path.$segment"
+        if (segment !in node) return PersistentParentSnapshot(path, false, null)
+        val child = node[segment]
+        if (child !is Map<*, *>) return PersistentParentSnapshot(path, true, child)
+        node = child
+    }
+    return null
+}
+
+internal fun restorePersistentMapNode(
+    variables: MutableMap<String, Any?>,
+    path: String,
+    present: Boolean,
+    value: Any?,
+) {
+    require(path.isNotEmpty()) { "A root node must be restored on the ItemTag directly" }
+    val segments = path.split(".")
+    var node = variables
+    for (segment in segments.dropLast(1)) {
+        val child = node[segment] as? Map<*, *>
+        val mutableChild = LinkedHashMap<String, Any?>()
+        child?.forEach { (key, childValue) ->
+            if (key is String) mutableChild[key] = childValue
+        }
+        node[segment] = mutableChild
+        node = mutableChild
+    }
+    val leaf = segments.last()
+    if (present && value != null) node[leaf] = transferBooleanToByte(value)
+    else node.remove(leaf)
+}
+
+private fun readPersistentParentState(itemStack: ItemStack?, key: String): PersistentParentSnapshot? {
     val prefix = PERSISTENT_ALTERATION_PREFIXES.firstOrNull {
         key == it || key.startsWith("$it.") || key.startsWith("$it:")
     } ?: return null
     val remainder = key.removePrefix(prefix).removePrefix(".").removePrefix(":")
+    if (remainder.isEmpty()) return null
     val tagName = when (prefix) {
         "sertraline:vars" -> "sertraline_data"
         else -> return null
     }
-    val root = itemStack.getItemTag(true)[tagName] ?: return null
-    if (remainder.isEmpty()) return root.parseNBT()
-    val data = root.parseMapNBT().toMutableMap()
-    var current: Any? = data
-    val segments = remainder.split(".")
-    for (segment in segments.dropLast(1)) {
-        current = (current as? Map<*, *>)?.get(segment) ?: return null
-    }
-    return (current as? Map<*, *>)?.get(segments.last())
+    val root = itemStack?.getItemTag(true)?.get(tagName)
+    if (root == null) return capturePersistentParentSnapshot(null, remainder)
+    val variables = runCatching { root.parseMapNBT() }.getOrNull()
+        ?: return PersistentParentSnapshot("", true, root.parseNBT())
+    return capturePersistentParentSnapshot(variables, remainder)
 }
 
 /**
  * 反向撤回一条已折叠的持久化修改：直接改写 `sertraline_data` NBT。
- * - SET：恢复 [RecordedAlteration.previous]（无原值则删除该键）
+ * - New records restore their exact pre-application value for every operation.
+ * - Legacy records without snapshots use the former best-effort inverse.
  * - ADD：应用相反数
  * - REMOVE / 其他：无法可靠反推，删除该键（vars 缺省时模板默认值接管）
  */
@@ -327,9 +454,40 @@ fun revertPersistedAlteration(itemStack: ItemStack, record: RecordedAlteration) 
     } ?: return
     val tagName = if (prefix == "sertraline:vars") "sertraline_data" else return
     val remainder = key.removePrefix(prefix).removePrefix(".").removePrefix(":")
-    if (remainder.isEmpty()) return
-
     val tag = itemStack.getItemTag()
+
+    if (record.previousParentPath != null) {
+        if (record.previousParentPath.isEmpty()) {
+            if (record.previousParentPresent && record.previousParent != null) {
+                tag[tagName] = transferBooleanToByte(record.previousParent) as Any
+            } else {
+                tag.remove(tagName)
+            }
+        } else {
+            val data = tag[tagName]?.let { root ->
+                runCatching { linkedMapOf<String, Any?>().apply { putAll(root.parseMapNBT()) } }.getOrNull()
+            } ?: linkedMapOf()
+            restorePersistentMapNode(data, record.previousParentPath, record.previousParentPresent, record.previousParent)
+            tag[tagName] = data
+        }
+        tag.saveTo(itemStack)
+        return
+    }
+
+    // The root target represents the entire vars compound (for example MAP_CLEAR).
+    // Restore its saved pre-application value instead of leaving an empty compound behind.
+    if (remainder.isEmpty()) {
+        if (record.previousKnown) {
+            if (record.previousPresent && record.previous != null) {
+                tag[tagName] = transferBooleanToByte(record.previous) as Any
+            } else {
+                tag.remove(tagName)
+            }
+            tag.saveTo(itemStack)
+        }
+        return
+    }
+
     val dataTag = tag[tagName]?.asCompound() ?: ItemTag()
     val segments = remainder.split(".")
 
@@ -341,7 +499,10 @@ fun revertPersistedAlteration(itemStack: ItemStack, record: RecordedAlteration) 
         node = next
     }
     val leaf = segments.last()
-    when (alteration.operation) {
+    if (record.previousKnown) {
+        if (record.previousPresent && record.previous != null) node[leaf] = transferBooleanToByte(record.previous) as Any
+        else node.remove(leaf)
+    } else when (alteration.operation) {
         AlterationOperation.SET -> {
             if (record.previous != null) node[leaf] = transferBooleanToByte(record.previous) as Any
             else node.remove(leaf)

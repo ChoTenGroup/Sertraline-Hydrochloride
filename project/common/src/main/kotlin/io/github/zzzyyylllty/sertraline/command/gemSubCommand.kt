@@ -3,6 +3,7 @@ package io.github.zzzyyylllty.sertraline.command
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketMethod
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketResult
 import io.github.zzzyyylllty.sertraline.item.gem.GemUnsocketResult
+import io.github.zzzyyylllty.sertraline.data.localizedName
 import io.github.zzzyyylllty.sertraline.function.data.getSertralineId
 import io.github.zzzyyylllty.sertraline.item.gem.getGemSlots
 import io.github.zzzyyylllty.sertraline.item.gem.getSocketedGems
@@ -80,7 +81,9 @@ object GemCommand {
                     } else player.inventory.itemInOffHand
                     if (gem.isNotExist()) return@execute
                     val fromOffHand = gemId == null
-                    when (socketGem(player, weapon, gem, context["slotId"], GemSocketMethod.COMMAND)) {
+                    val slotId = context["slotId"]
+                    val slotName = weapon.getGemSlots()[slotId]?.localizedName(player) ?: slotId
+                    when (socketGem(player, weapon, gem, slotId, GemSocketMethod.COMMAND)) {
                         GemSocketResult.SUCCESS -> {
                             // Write both sides back explicitly instead of relying on the
                             // inventory returning live mirrors.
@@ -93,9 +96,9 @@ object GemCommand {
                                     player.inventory.setItem(gemSourceSlot, if (gem.amount > 0) gem else null)
                             }
                             player.updateInventory()
-                            player.sendStringAsComponent(player.asLangText("Gem_Socket_Success", context["slotId"]))
+                            player.sendStringAsComponent(player.asLangText("Gem_Socket_Success", slotName))
                         }
-                        else -> player.sendStringAsComponent(player.asLangText("Gem_Socket_Failed", context["slotId"]))
+                        else -> player.sendStringAsComponent(player.asLangText("Gem_Socket_Failed", slotName))
                     }
                 }
             }
@@ -113,13 +116,17 @@ object GemCommand {
                 val player = sender as? Player ?: return@execute
                 val weapon = player.inventory.itemInMainHand
                 if (weapon.isNotExist()) return@execute
-                when (unsocketGem(player, weapon, context["slotId"])) {
+                val slotId = context["slotId"]
+                val slotName = weapon.getGemSlots()[slotId]?.localizedName(player) ?: slotId
+                when (unsocketGem(player, weapon, slotId)) {
                     GemUnsocketResult.SUCCESS -> {
                         player.inventory.setItemInMainHand(weapon)
                         player.updateInventory()
-                        player.sendStringAsComponent(player.asLangText("Gem_Unsocket_Success", context["slotId"]))
+                        player.sendStringAsComponent(player.asLangText("Gem_Unsocket_Success", slotName))
                     }
-                    else -> player.sendStringAsComponent(player.asLangText("Gem_Unsocket_Failed", context["slotId"]))
+                    GemUnsocketResult.INVENTORY_FULL ->
+                        player.sendStringAsComponent(player.asLangText("Gem_Unsocket_Inventory_Full", slotName))
+                    else -> player.sendStringAsComponent(player.asLangText("Gem_Unsocket_Failed", slotName))
                 }
             }
         }
@@ -144,7 +151,7 @@ object GemCommand {
                 player.sendStringAsComponent(
                     player.asLangText(
                         if (gem != null) "Gem_List_Used" else "Gem_List_Empty",
-                        id, slot.name, gem?.gemId ?: "",
+                        id, slot.localizedName(player), gem?.gemId ?: "",
                     )
                 )
             }

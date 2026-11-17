@@ -209,8 +209,11 @@ object ManagerCommand {
                 val sub = resolveSub(name)
                 try {
                     val uuid = if (type == ManagerType.PRIVATE) resolveCommandUuid(sender, name) else null
-                    Sertraline.manager.deleteItem(type, sub, itemId, uuid)
-                    sender.sendStringAsComponent(sender.langText("Manager_Delete_Success", itemId))
+                    if (Sertraline.manager.deleteItemResult(type, sub, itemId, uuid)) {
+                        sender.sendStringAsComponent(sender.langText("Manager_Delete_Success", itemId))
+                    } else {
+                        sender.sendStringAsComponent(sender.langText("Manager_Delete_Not_Found", itemId))
+                    }
                 } catch (e: Exception) {
                     sender.sendStringAsComponent("<red>${e.message}</red>")
                 }

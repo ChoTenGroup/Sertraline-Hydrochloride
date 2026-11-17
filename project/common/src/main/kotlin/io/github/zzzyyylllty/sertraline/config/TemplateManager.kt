@@ -586,7 +586,7 @@ object TemplateManager {
             warningL("Config_Load_Error_Parse", "\$t self_increase", "step must not be 0 unless from == to")
             return TransformResult(from.toString())
         }
-        if (step != 0 && ((to - from) * step < 0)) {
+        if ((step > 0 && from > to) || (step < 0 && from < to)) {
             warningL("Config_Load_Error_Parse", "\$t self_increase", "step direction does not match from/to range (from=$from, to=$to, step=$step)")
             return TransformResult(from.toString())
         }
@@ -601,21 +601,25 @@ object TemplateManager {
     /**
      * 自增计数器。每次调用 next() 返回当前值并步进。
      */
-    private class SelfIncreaseCounter(
+    internal class SelfIncreaseCounter(
         from: Int,
         private val to: Int,
         private val step: Int,
         private val stepInterval: Int
     ) {
-        private var current = from
+        private var current = from.toLong()
         private var callCount = 0
+        private var finished = false
 
         fun next(): String? {
-            if (current > to) return null
+            if (finished) return null
+            if (if (step > 0) current > to.toLong() else current < to.toLong()) return null
             val value = current
             callCount++
-            if (callCount % stepInterval == 0) {
-                current += step
+            if (step == 0) {
+                finished = true
+            } else if (callCount % stepInterval == 0) {
+                current += step.toLong()
             }
             return value.toString()
         }

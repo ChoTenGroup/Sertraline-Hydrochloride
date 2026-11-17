@@ -18,6 +18,7 @@ import org.bukkit.inventory.ItemStack
 import com.cryptomorin.xseries.XMaterial
 import taboolib.library.xseries.XItemStack
 import taboolib.module.nms.NMSItemTag.Companion.asNMSCopy
+import taboolib.module.nms.NMSItemTag.Companion.asBukkitCopy
 import kotlin.math.roundToInt
 
 // 命名空间别名表统一由 SItemFactory.classify 维护，这里不再保留各自的副本
@@ -96,6 +97,7 @@ return ItemStack(XMaterial.GRASS_BLOCK.parseMaterial() ?: Material.STONE)
                     if (value != null) EmbianComponent.SafetyComponentSetter.setComponentNMS(nmsStack, it.key, value)?.let { nmsStack = it }
                     else EmbianComponent.SafetyComponentSetter.removeComponentNMS(nmsStack, it.key).let { nmsStack = it }
                 }
+                itemStack = asBukkitCopy(nmsStack)
             } else {
                 warningL("WarningNotSupportDataComponent")
             }

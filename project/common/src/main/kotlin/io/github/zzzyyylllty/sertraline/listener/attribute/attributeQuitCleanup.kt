@@ -1,5 +1,6 @@
 package io.github.zzzyyylllty.sertraline.listener.attribute
 
+import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeEngine
 import org.bukkit.event.player.PlayerQuitEvent
 import taboolib.common.platform.event.SubscribeEvent
@@ -14,4 +15,5 @@ import taboolib.common.platform.event.SubscribeEvent
 @SubscribeEvent
 fun onQuitRestoreAttributes(e: PlayerQuitEvent) {
     runCatching { SertralineAttributeEngine.clear(e.player) }
+    runCatching { Sertraline.chotenAttributeProvider.forget(e.player.uniqueId) }
 }

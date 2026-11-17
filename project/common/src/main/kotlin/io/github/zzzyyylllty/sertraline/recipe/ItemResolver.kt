@@ -32,13 +32,16 @@ object ItemResolver {
      */
     fun resolve(ingredient: RecipeIngredient): RecipeChoice {
         return when (ingredient) {
-            is RecipeIngredient.Item -> resolveItem(ingredient.itemId, ingredient.amount)
+            is RecipeIngredient.Item -> resolveItem(ingredient.itemId, ingredient.amount, ingredient.exact)
             is RecipeIngredient.Tag -> resolveTag(ingredient.tagId, ingredient.amount)
             is RecipeIngredient.Choice -> resolveChoice(ingredient)
         }
     }
 
-    private fun resolveItem(itemId: String, amount: Int): RecipeChoice {
+    private fun resolveItem(itemId: String, amount: Int, exact: Boolean = false): RecipeChoice {
+        require(amount == 1) {
+            "Recipe ingredient amount $amount is unsupported; each recipe slot consumes one item"
+        }
         val ref = resolveRecipeReference(itemId)
             ?: throw IllegalArgumentException("Unknown item reference: $itemId")
 
@@ -47,7 +50,8 @@ object ItemResolver {
             RecipeSourceKind.MINECRAFT -> {
                 val material = ref.material
                     ?: throw IllegalArgumentException("Unknown vanilla material: $itemId")
-                RecipeChoice.MaterialChoice(material)
+                if (exact) RecipeChoice.ExactChoice(ItemStack(material))
+                else RecipeChoice.MaterialChoice(material)
             }
             // Sertraline's own item → ExactChoice (with NBT)
             RecipeSourceKind.SERTRALINE -> {
@@ -65,6 +69,9 @@ object ItemResolver {
     }
 
     private fun resolveTag(tagId: String, amount: Int): RecipeChoice {
+        require(amount == 1) {
+            "Recipe tag amount $amount is unsupported; each recipe slot consumes one item"
+        }
         val normalized = normalizeTagKey(tagId)
         val tag = resolveBukkitTag(normalized)
             ?: throw IllegalArgumentException("Unknown tag: $tagId (normalized: $normalized)")
@@ -73,14 +80,23 @@ object ItemResolver {
 
     @Suppress("UNCHECKED_CAST")
     private fun resolveChoice(choice: RecipeIngredient.Choice): RecipeChoice {
-        val choices = choice.options.map { resolve(it) }
+        return mergeRecipeChoices(choice.options.map { resolve(it) })
+    }
+
+    // ---- Internal helpers ----
+
+    /** Combines resolved choices without dropping options nested inside a mixed union. */
+    internal fun mergeRecipeChoices(input: List<RecipeChoice>): RecipeChoice {
+        val choices = input.flatMap { choice ->
+            if (choice is UnionRecipeChoice) choice.flatten() else listOf(choice)
+        }
         if (choices.isEmpty()) throw IllegalArgumentException("Choice must have at least one option")
 
-        // Collect MaterialChoice / ExactChoice
         val materials = mutableListOf<Material>()
         val exactStacks = mutableListOf<ItemStack>()
         var materialChoiceCount = 0
         var exactChoiceCount = 0
+        var hasUnsupportedChoice = false
 
         for (c in choices) {
             when (c) {
@@ -93,19 +109,19 @@ object ItemResolver {
                     exactStacks.addAll(c.choices)
                     exactChoiceCount++
                 }
+                else -> hasUnsupportedChoice = true
             }
         }
 
         return when {
+            hasUnsupportedChoice -> UnionRecipeChoice(choices)
             exactChoiceCount > 0 && materialChoiceCount == 0 ->
                 RecipeChoice.ExactChoice(exactStacks)
             materialChoiceCount > 0 && exactChoiceCount == 0 ->
                 RecipeChoice.MaterialChoice(materials)
-            else -> error("Mixed choice types cannot be merged: ${materialChoiceCount} MaterialChoice + ${exactChoiceCount} ExactChoice")
+            else -> UnionRecipeChoice(choices)
         }
     }
-
-    // ---- Internal helpers ----
 
     /**
      * Normalizes a tag key:
@@ -175,4 +191,18 @@ object ItemResolver {
             }
         }
     }
+}
+
+/** Keeps MaterialChoice's material-only matching when it is mixed with exact choices. */
+internal class UnionRecipeChoice(internal val choices: List<RecipeChoice>) : RecipeChoice {
+    internal fun flatten(): List<RecipeChoice> = choices.flatMap { choice ->
+        if (choice is UnionRecipeChoice) choice.flatten() else listOf(choice)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun getItemStack(): ItemStack = choices.first().itemStack.clone()
+
+    override fun test(item: ItemStack): Boolean = choices.any { it.test(item) }
+
+    override fun clone(): RecipeChoice = UnionRecipeChoice(choices.map { it.clone() })
 }

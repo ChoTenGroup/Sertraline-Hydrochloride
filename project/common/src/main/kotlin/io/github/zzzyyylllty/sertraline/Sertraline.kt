@@ -243,6 +243,8 @@ object Sertraline : Plugin() {
     val itemManager by lazy { ItemProcessorManager() }
     val manager = io.github.zzzyyylllty.sertraline.manager.ItemManager()
     val tagManager by lazy { TagProcessorManager() }
+    /** Keeps ChoTen modifier ownership across reloads, when providers are re-registered. */
+    val chotenAttributeProvider by lazy { ChotenAttributeProvider() }
     @Volatile var devMode = false
     @Volatile var allowAsyncLog = true
     var isEnabled = false
@@ -755,5 +757,5 @@ fun registerNativeAttributeProviders() {
             .let { AttributeManager.register(it as AttributeProvider) }
     } catch (_: Throwable) {
     }
-    AttributeManager.register(ChotenAttributeProvider())
+    AttributeManager.register(Sertraline.chotenAttributeProvider)
 }

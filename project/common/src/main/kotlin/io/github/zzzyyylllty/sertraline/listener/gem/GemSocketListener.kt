@@ -1,6 +1,7 @@
 package io.github.zzzyyylllty.sertraline.listener.gem
 
 import io.github.zzzyyylllty.sertraline.data.isClickSocketEnabled
+import io.github.zzzyyylllty.sertraline.data.localizedName
 import io.github.zzzyyylllty.sertraline.item.gem.GemRouteDenial
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketMethod
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketPolicy
@@ -10,12 +11,24 @@ import io.github.zzzyyylllty.sertraline.item.gem.getGemSlots
 import io.github.zzzyyylllty.sertraline.item.gem.getUsedGemSlots
 import io.github.zzzyyylllty.sertraline.item.gem.socketGem
 import io.github.zzzyyylllty.sertraline.item.itemTemplateForStack
+import io.github.zzzyyylllty.sertraline.logger.sendStringAsComponent
 import io.github.zzzyyylllty.sertraline.util.isNotExist
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.InventoryClickEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
-import taboolib.platform.util.sendLang
+import taboolib.platform.util.asLangText
+
+/**
+ * Sends a lang node the way the rest of the plugin does.
+ *
+ * TabooLib's `sendLang` writes the raw node text with legacy codes only, so the
+ * MiniMessage colours used by every lang entry (`<#66ccff>`, `<red>`, …) end up on
+ * screen as literal tags. [sendStringAsComponent] converts legacy codes and parses
+ * MiniMessage, which also lets the interpolated socket name keep its own colours.
+ */
+private fun Player.sendGemLang(node: String, vararg args: Any) =
+    sendStringAsComponent(asLangText(node, *args))
 
 /**
  * Click-to-socket interaction: picking up a Sertraline gem on the cursor and
@@ -47,23 +60,19 @@ fun onGemSocketClick(e: InventoryClickEvent) {
     if (slots.isEmpty()) return // target has no sockets
 
     val used = weapon.getUsedGemSlots()
-    // Every free slot that accepts this gem's colour, ignoring the route flags.
-    val freeSlot = slots.values.firstOrNull { it.id !in used && it.accepts(gemDef.color) }
+    // First select a socket that accepts this gem and permits click socketing.
+    val compatibleSlot = slots.values.firstOrNull { it.id !in used && it.accepts(gemDef.color) }
         ?: return // no compatible free slot — let vanilla handle the click
 
-    // Definition-level click gates. Checking them here (instead of only inside socketGem)
-    // keeps a `click: false` socket from ever being *selected*: previously the first free
-    // socket was picked regardless of its flag, the socket was refused and the click was
-    // left to vanilla, so a usable second socket could never be reached by clicking.
     val itemClickEnabled = itemTemplateForStack(weapon, null)?.isClickSocketEnabled() ?: true
     if (!itemClickEnabled || !gemDef.clickSocket) {
-        player.sendLang("gem-socket-denied", freeSlot.name)
+        player.sendGemLang("gem-socket-denied", compatibleSlot.localizedName(player))
         return
     }
     val target = slots.values.firstOrNull {
         it.id !in used && it.clickSocket && it.accepts(gemDef.color)
     } ?: run {
-        player.sendLang("gem-socket-denied", freeSlot.name)
+        player.sendGemLang("gem-socket-denied", compatibleSlot.localizedName(player))
         return
     }
 
@@ -72,7 +81,7 @@ fun onGemSocketClick(e: InventoryClickEvent) {
     when (GemSocketPolicy.denialOf(GemSocketMethod.CLICK, player, e.click)) {
         null -> Unit
         GemRouteDenial.PERMISSION -> {
-            player.sendLang("gem-click-denied")
+            player.sendGemLang("gem-click-denied")
             return
         }
         GemRouteDenial.DISABLED, GemRouteDenial.CLICK_TYPE -> return
@@ -89,11 +98,11 @@ fun onGemSocketClick(e: InventoryClickEvent) {
             e.currentItem = weapon
             e.view.cursor = if (gem.amount > 0) gem else null
             player.updateInventory()
-            player.sendLang("gem-socket-success", target.name)
+            player.sendGemLang("gem-socket-success", target.localizedName(player))
         }
         // The item / socket / gem opted out of click socketing — say so instead of
         // silently swallowing the click.
-        GemSocketResult.METHOD_NOT_ALLOWED -> player.sendLang("gem-socket-denied", target.name)
-        else -> player.sendLang("gem-socket-failed", result.name)
+        GemSocketResult.METHOD_NOT_ALLOWED -> player.sendGemLang("gem-socket-denied", target.localizedName(player))
+        else -> player.sendGemLang("gem-socket-failed", result.name)
     }
 }

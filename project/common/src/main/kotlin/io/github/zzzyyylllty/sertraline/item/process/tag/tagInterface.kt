@@ -21,32 +21,69 @@ fun interface TagProcessor {
 }
 
 class TagProcessorManager {
-    // LinkedHashMap preserves insertion order
-    private val processors = LinkedHashMap<String, TagProcessor>()
+    private data class Snapshot(
+        val processors: Map<String, TagProcessor>,
+        val aliases: Map<String, String>,
+    )
+
+    @Volatile
+    private var snapshot = Snapshot(emptyMap(), emptyMap())
+    private val mutationLock = Any()
+
+    // Keep the historical mutable map API and JVM getter descriptor for plugin compatibility.
+    // Mutations made directly by plugins are reconciled into the immutable processing snapshot.
     val aliases = LinkedHashMap<String, String>()
 
     // Register a processor, using the name as the key for easy management
     fun registerProcessor(name: String, tagAliases: List<String> = listOf(), processor: TagProcessor) {
-        if (SertralineSettings.rawBoolean("tags.$name", true)) {
-            processors[name] = processor
-            aliases[name] = name
-            for (alias in tagAliases) {
-                if (SertralineSettings.rawBoolean("tags.$alias", true)) aliases[alias] = name
+        if (!SertralineSettings.rawBoolean("tags.$name", true)) return
+        synchronized(mutationLock) {
+            reconcilePublicAliases()
+            val processors = LinkedHashMap(snapshot.processors).apply { put(name, processor) }
+            val nextAliases = LinkedHashMap(snapshot.aliases).apply {
+                put(name, name)
+                for (alias in tagAliases) {
+                    if (SertralineSettings.rawBoolean("tags.$alias", true)) put(alias, name)
+                }
             }
+            publish(processors, nextAliases)
         }
     }
 
     // Remove a processor
     fun unregisterProcessor(name: String) {
-        processors.remove(name)
+        synchronized(mutationLock) {
+            reconcilePublicAliases()
+            val processors = LinkedHashMap(snapshot.processors).apply { remove(name) }
+            val nextAliases = LinkedHashMap(snapshot.aliases).apply { entries.removeIf { it.value == name } }
+            publish(processors, nextAliases)
+        }
     }
 
     fun unregisterAllProcessor() {
-        processors.clear()
+        synchronized(mutationLock) {
+            publish(emptyMap(), emptyMap())
+        }
+    }
+
+    private fun publish(processors: Map<String, TagProcessor>, aliases: Map<String, String>) {
+        this.aliases.clear()
+        this.aliases.putAll(aliases)
+        snapshot = Snapshot(immutableOrderedMap(processors), immutableOrderedMap(aliases))
+    }
+
+    private fun reconcilePublicAliases() {
+        if (aliases != snapshot.aliases) {
+            snapshot = Snapshot(snapshot.processors, immutableOrderedMap(aliases))
+        }
     }
 
     // Run all processors in order
     fun processItem(itemJson: String, item: AbstractSItem,itemStack: ItemStack?, player: Player?): String {
+        val current = synchronized(mutationLock) {
+            reconcilePublicAliases()
+            snapshot
+        }
 //        var itemData = ProcessItemTagData(itemJson, item, itemStack, player, extractPlaceholders(itemJson))
 //        for (processor in processors) {
 //            itemData = processor.value.process(itemData, player)
@@ -55,7 +92,7 @@ class TagProcessorManager {
         val repl: Set<String> = extractPlaceholders(itemJson) ?: return itemJson
 
         // Extract all processor names for prefix matching
-        val processorNames = aliases.keys.toList()
+        val processorNames = current.aliases.keys.toList()
 
         // An empty set returns directly
         if (repl.isEmpty()) return itemJson
@@ -98,7 +135,7 @@ class TagProcessorManager {
             // key = "val"
             // value = "constant-id"
 
-            val processorName = aliases[key] ?: continue
+            val processorName = current.aliases[key] ?: continue
             if (useProcessors[processorName] == null) {
                 useProcessors[processorName] = linkedMapOf()
             }
@@ -111,7 +148,7 @@ class TagProcessorManager {
 
         for ((name, processor) in useProcessors) {
             processor?.let {
-                processors[name]?.process(itemData, player, it, target)
+                current.processors[name]?.process(itemData, player, it, target)
             }
         }
 
@@ -141,8 +178,11 @@ class TagProcessorManager {
     }
 
     // Can view the currently registered processors
-    fun listProcessors(): List<String> = processors.keys.toList()
+    fun listProcessors(): List<String> = snapshot.processors.keys.toList()
 }
+
+private fun <K, V> immutableOrderedMap(source: Map<K, V>): Map<K, V> =
+    java.util.Collections.unmodifiableMap(LinkedHashMap(source))
 
 fun extractPlaceholders(input: String): Set<String>? {
 

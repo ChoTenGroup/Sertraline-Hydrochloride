@@ -100,7 +100,8 @@ class ActionSmanager {
             val sub = resolveSubType(frame)
             val uuid = if (type == ManagerType.PRIVATE) resolvePrivateUuid(frame) else null
             try {
-                manager.deleteItem(type, sub, selected, uuid)
+                val deleted = manager.deleteItemResult(type, sub, selected, uuid)
+                if (!deleted) return CompletableFuture.completedFuture(false)
                 frame.variables().remove(ItemManager.Vars.SELECTED)
                 return CompletableFuture.completedFuture(true)
             } catch (e: Exception) {
