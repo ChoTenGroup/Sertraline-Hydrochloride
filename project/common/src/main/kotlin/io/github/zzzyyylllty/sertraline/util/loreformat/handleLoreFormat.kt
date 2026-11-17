@@ -665,9 +665,9 @@ fun Any?.performNormalPlaceholders(content: String, player: Player?, sItem: Abst
 
 fun String.replaceTierPlaceholders(tier: Tier): String {
     return this
-        .replace("{tier:name}", tier.name)   // 最高优先级，纯名称
-        .replace("{tier:desc}", tier.description) // 最高优先级，纯描述
-        .replace("{tier}", tier.name)        // 次优先级，纯名称
+        .replace("{tier:name}", tier.name)   // Highest priority: name only.
+        .replace("{tier:desc}", tier.description) // Highest priority: description only.
+        .replace("{tier}", tier.name)        // Lower priority: name only.
         .replace("{tier:format}", tier.color + tier.name)
         .replace("{tier:color}", tier.color)
         .replace("{tier:id}", tier.id)
@@ -686,7 +686,7 @@ fun String.replaceTypePlaceholders(type: Type): String {
 
 fun String.replaceLevelPlaceholders(level: Level): String {
     return this
-        .replace("{level:name}", level.name)   // 明确支持 {level:name}
+        .replace("{level:name}", level.name)   // Explicitly supports {level:name}.
         .replace("{level}", level.name)
         .replace("{level:color}", level.color)
         .replace("{level:weight}", level.weight.toString())

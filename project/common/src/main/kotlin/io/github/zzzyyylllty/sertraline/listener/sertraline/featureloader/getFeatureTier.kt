@@ -27,7 +27,7 @@ fun getFeatureTier(e: FeatureLoadEvent) {
         }
     }
 
-    // Find the corresponding quality (context 模式优先候选表，未命中回读 live)
+    // Find the corresponding tier (in context mode, check the candidate table first and fall back to live).
     val tier = e.context?.let { it.tiers[tierId] ?: it.liveTiers[tierId] } ?: tiers[tierId]
     if (tier == null) {
         warningS("Tier '$tierId' not found for item ${e.sItemKey}")
@@ -39,7 +39,7 @@ fun getFeatureTier(e: FeatureLoadEvent) {
     // Set the result to the quality ID (string)
     e.result = tierId
 
-    // Also store the quality reference in itemCache（context 模式写候选，发布时合并）
+    // Also store the tier reference in itemCache (in context mode, write to the candidate and merge on publish).
     val cacheSink: MutableMap<String, Map<String, Any?>> =
         e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
     val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()

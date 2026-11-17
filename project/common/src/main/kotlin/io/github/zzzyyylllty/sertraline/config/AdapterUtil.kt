@@ -1,10 +1,10 @@
 package io.github.zzzyyylllty.sertraline.config
 
 /**
- * 将任意值转换为字符串列表。
+ * Converts any value to a list of strings.
  * - null → null
- * - List<*> → 展开为字符串列表，每个元素按换行符拆分
- * - 其他类型 → 包装为单元素列表
+ * - List<*> -> Flatten into a string list, splitting each element at newline characters.
+ * - Other types -> Wrap as a single-element list.
  */
 fun Any?.asListEnhanced() : List<String>? {
     if (this == null) return null

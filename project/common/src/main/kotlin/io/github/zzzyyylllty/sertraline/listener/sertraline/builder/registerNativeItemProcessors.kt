@@ -50,7 +50,7 @@ fun registerNativeAdapter() {
         commonAdapter(item, sItem, player)
     }
 
-    // 外部插件注册的段落必须在每次重载后重新挂载，否则 /sreload 之后它们会静默失效。
+    // Reattach processor sections registered by external plugins after every reload; otherwise they silently stop working after /sreload.
     ExternalItemProcessors.applyExternalProcessors()
 
 }

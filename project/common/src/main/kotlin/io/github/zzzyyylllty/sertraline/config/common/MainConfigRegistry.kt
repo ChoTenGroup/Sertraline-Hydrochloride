@@ -1,32 +1,28 @@
 package io.github.zzzyyylllty.sertraline.config.common
 
 /**
- * config.yml 节点注册表（单一事实来源）。
- * 代码一律经 [SertralineSettings] 读取；文件结构由此生成。
+ * Node registry for config.yml (the single source of truth).
+ * Code reads settings through [SertralineSettings]; the file structure is generated from this registry.
  */
 object SertralineMainConfig {
 
-    /** config.yml schema 版本（由 SConfigSpec.upgrade 驱动迁移）。 */
+    /** config.yml schema version (migrations are driven by SConfigSpec.upgrade). */
     const val VERSION = 2
 
     /**
-     * Sertraline 在 FastStats 上的项目 token（32 位小写字母/数字），作为 `metrics.token` 的默认值分发。
+     * Sertraline's FastStats project token (32 lowercase letters/digits), shipped as the default for `metrics.token`.
      *
-     * 与 bStats 的 plugin id 同性质：它只是「上报到哪个项目」的公开标识，不是账号凭证，
-     * 因此可以随插件一起分发。真正的退出开关是 `metrics.enabled` 与
-     * `plugins/faststats/config.properties` 里的 `enabled` / `submitMetrics`。
-     *
-     * Sertraline's FastStats project token, shipped as the default for `metrics.token`.
-     * Same nature as a bStats plugin id — a public "which project" identifier, not a credential.
-     * The real opt-outs are `metrics.enabled` and `plugins/faststats/config.properties`.
+     * Like a bStats plugin ID, it is a public identifier for the project receiving reports, not an account credential,
+     * so it can be distributed with the plugin. The opt-out switches are `metrics.enabled` and
+     * `enabled` / `submitMetrics` in `plugins/faststats/config.properties`.
      */
     const val FASTSTATS_TOKEN = "48b10c752e7ff60620bc630506d81223"
 
-    /** 版本迁移表：key = 迁移到的版本号（2..VERSION），value = 从 v(key-1) 升到 v(key) 的迁移。 */
+    /** Version migration table: key = target version (2..VERSION); value = migration from v(key-1) to v(key). */
     val migrations: Map<Int, ConfigMigration> = mapOf(
-        // v2: 宝石系统上线。旧默认值只保留 sertraline_data / sertraline_revision，
-        //     缺少 sertraline_gem 会让每次 rebuild 丢掉已镶嵌的宝石。
-        //     这里补进 keep-data（列表节点不会被 sync 补写，只能靠迁移）。
+        // v2: Added the gem system. The old default preserved only sertraline_data / sertraline_revision,
+        // so omitting sertraline_gem caused every rebuild to discard socketed gems.
+        // Add it to keep-data here (sync does not add missing list nodes, so migration is required).
         2 to ConfigMigration { config ->
             val keep = config.getStringList("rebuild.keep-data").toMutableList()
             if (keep.isEmpty()) {
@@ -43,7 +39,7 @@ object SertralineMainConfig {
         SConfigNode("lang", "en_US", "语言 language\nLanguage"),
         SConfigNode("async-logging", true, "异步日志输出\nAsync log output"),
 
-        // ==================== 数据统计 ====================
+        // ==================== Metrics ====================
         SConfigNode(
             "metrics.enabled", true,
             "FastStats 数据统计（类似 bStats 的匿名使用统计，https://docs.faststats.dev/java）\n"
@@ -71,7 +67,7 @@ object SertralineMainConfig {
                 + "Submit plugin custom metrics (data sources must exist in the project with a matching id and type)"
         ),
 
-        // ==================== 物品更新系统 ====================
+        // ==================== Item update system ====================
         SConfigNode(
             "item-update.enabled", true,
             "物品更新系统\nItem Update System — automatically rebuilds items when their definition changes\n"
@@ -101,7 +97,7 @@ object SertralineMainConfig {
                 + "Whether to notify the player of updates (one merged message per check batch)"
         ),
 
-        // ==================== 文件加载 ====================
+        // ==================== File loading ====================
         SConfigNode(
             "file-load.item", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$",
             "如果你想使用 \\ 这样的转义字符（如 \\.），必须改用 \\\\ 代替。\n"
@@ -116,12 +112,12 @@ object SertralineMainConfig {
         SConfigNode("file-load.level", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", ""),
         SConfigNode("file-load.attribute", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", "Attribute files / 属性文件"),
 
-        // ==================== 预加载 ====================
+        // ==================== Preloading ====================
         SConfigNode("preload.script.graaljs", true, "预编译脚本\nPre-compile scripts"),
         SConfigNode("preload.script.javascript", true, ""),
         SConfigNode("preload.script.jexl", true, ""),
 
-        // ==================== 模块 ====================
+        // ==================== Modules ====================
         SConfigNode("modules.common.feature", true, "模块 Modules"),
         SConfigNode("modules.common.editor", false, ""),
         SConfigNode("modules.sertraline.feature", true, ""),
@@ -141,11 +137,11 @@ object SertralineMainConfig {
         SConfigNode("modules.eco.feature", true, ""),
         SConfigNode("modules.eco.editor", true, ""),
 
-        // ==================== 占位符 ====================
+        // ==================== Placeholders ====================
         SConfigNode("placeholders.plus", "+", "正负号占位符\nSign placeholders ({plus} / {minus})"),
         SConfigNode("placeholders.minus", "-", ""),
 
-        // ==================== 物品重建保留项 ====================
+        // ==================== Item rebuild preservation ====================
         SConfigNode("rebuild.keep-data", listOf("sertraline_data", "sertraline_revision", "sertraline_gem"), "重建时保留的数据键\nNBT keys preserved on rebuild"),
         SConfigNode(
             "rebuild.keep-component",
@@ -153,7 +149,7 @@ object SertralineMainConfig {
             "重建时保留的组件\nComponents preserved on rebuild"
         ),
 
-        // ==================== 宝石系统 ====================
+        // ==================== Gem system ====================
         SConfigNode(
             "gem.interaction.click.enable", true,
             "点击镶嵌总开关（手持宝石点击带槽位物品）\n"
@@ -172,7 +168,7 @@ object SertralineMainConfig {
                 + "Permission required for click-to-socket; blank = none (the /sertralinegem command is not affected)"
         ),
 
-        // ==================== 发包 ====================
+        // ==================== Packet handling ====================
         SConfigNode(
             "packet.register", true,
             "是否注册包处理器\n不启用或不安装packetevents 2.10+ 所有发包功能均不会生效\n"
@@ -182,7 +178,7 @@ object SertralineMainConfig {
         SConfigNode("packet.packet-lore", true, "是否启用发包Lore\nWhether to enable packet Lore"),
         SConfigNode("packet.packet-component", true, "是否启用发包组件\nWhether to enable packet component"),
 
-        // ==================== 标签解析 ====================
+        // ==================== Tag parsing ====================
         SConfigNode("tags.sertraline", true, "标签解析\nTag parsing"),
         SConfigNode("tags.papi", true, ""),
         SConfigNode("tags.val", true, ""),
@@ -190,7 +186,7 @@ object SertralineMainConfig {
         SConfigNode("tags.dynamic", true, ""),
         SConfigNode("tags.kether", true, ""),
 
-        // ==================== 属性 ====================
+        // ==================== Attributes ====================
         SConfigNode(
             "attribute.debounce-time", 1000,
             "默认防抖时间\nDefault debounce time\n"
@@ -211,7 +207,7 @@ object SertralineMainConfig {
         SConfigNode("attribute.vanilla-sync", "auto", "Vanilla sync: auto, true, false / 原版同步"),
         SConfigNode("attribute.rebase-vanilla", false, "Legacy zero base / 旧版零基值"),
 
-        // ==================== 动作 ====================
+        // ==================== Actions ====================
         SConfigNode(
             "action.throttle-time", 500,
             "默认节流时间\nDefault throttle time\n"
@@ -236,7 +232,7 @@ object SertralineMainConfig {
         SConfigNode("database.database", "sertraline", ""),
         SConfigNode("database.table", "sertraline_data", ""),
 
-        // ==================== 消息 ====================
+        // ==================== Messages ====================
         SConfigNode("messages.condition-not-met", "<red>Condition not met: {condition_name}</red>", "合成条件不满足时显示\nShown when crafting conditions are not met"),
         SConfigNode("messages.crafting-already-active", "<yellow>You already have an active crafting process!</yellow>", "已有合成进行中\nA crafting process is already in progress"),
         SConfigNode("messages.missing-ingredients", "<red>Missing ingredients: {display_name}</red>", "缺少材料\nMissing ingredients"),
@@ -246,7 +242,7 @@ object SertralineMainConfig {
         SConfigNode("messages.common.smithing-blocked", "<red>This item cannot be used in smithing!</red>", "锻造被阻止时显示\nShown when smithing is blocked"),
         SConfigNode("messages.common.village-trade-blocked", "<red>This item cannot be traded!</red>", "与村民交易被阻止时显示\nShown when trading with villagers is blocked"),
 
-        // ==================== 性能 ====================
+        // ==================== Performance ====================
         SConfigNode("performance.incremental-loading.enable", true, "增量加载配置，只加载修改过的文件\nIncremental loading, only load modified files"),
         SConfigNode(
             "performance.incremental-loading.monitor",
@@ -260,7 +256,7 @@ object SertralineMainConfig {
                 + "This may cause compatibility issues, so use it with caution"
         ),
 
-        // ==================== 修复 ====================
+        // ==================== Fixes ====================
         SConfigNode(
             "fixes.xbuilder.reapply-item-model", true,
             "XItemStack 相关模块未更新 ItemModel 部分，重新添加 ItemModel\n"

@@ -43,8 +43,8 @@ fun onPrepareCraft(event: PrepareItemCraftEvent) {
     val player = event.view.player as? Player ?: return
 
     // Only rebuild the Sertraline item result (with player variables).
-    // 走共享解析器：裸名会先按原版材质解析，解析不到才回落 Sertraline，
-    // 与配方注册路径保持完全一致的判定。
+    // Use the shared resolver: bare names are resolved as vanilla materials first, then fall back to Sertraline,
+    // matching the recipe registration path exactly.
     val ref = resolveRecipeReference(recipeData.result.itemId) ?: return
     if (ref.kind != RecipeSourceKind.SERTRALINE) return
 

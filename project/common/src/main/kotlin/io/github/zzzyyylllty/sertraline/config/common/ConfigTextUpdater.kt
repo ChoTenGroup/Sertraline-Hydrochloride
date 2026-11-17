@@ -3,28 +3,28 @@ package io.github.zzzyyylllty.sertraline.config.common
 import java.io.File
 
 /**
- * 以「文本插入」方式补写缺失的配置节点，已有内容一行都不重写。
+ * Adds missing configuration nodes by inserting text without rewriting any existing lines.
  *
- * 背景：TabooLib 的配置写盘是 night-config 的全量往返（`YamlWriter` = `toNodeTree` + `snakeyaml.serialize`），
- * 而 night-config 的注释模型是「一个路径一个 String」，装不下注释块里的空行；
- * TabooLib 只能用 `comments.joinToString("\n")` 桥接，null 元素被字符串化成字面量 `null`，
- * 于是每个作为分隔的空行保存后都会变成 `# null`。
+ * Background: TabooLib writes configuration through a full night-config round-trip (`YamlWriter` = `toNodeTree` + `snakeyaml.serialize`).
+ * night-config's comment model stores one String per path and cannot represent blank lines inside comment blocks.
+ * TabooLib bridges the two with `comments.joinToString("\n")`, which converts null elements to the literal `null`,
+ * causing every blank separator line to become `# null` when saved.
  *
- * 而配置自动更新的语义只是补写**缺失**节点——完全不需要改写已有文本。所以这里直接改文本：
- * - 已有行（值、注释、行内注释、缩进风格、键顺序）原样保留；
- * - 只把缺失的节点（含其注释）按推断出的缩进插入到正确的父节末尾；
- * - 父节不存在时，按层级新建缺失的中间节。
+ * Automatic configuration updates only need to add **missing** nodes, so existing text does not need to be rewritten:
+ * - Preserve existing lines (values, comments, inline comments, indentation, and key order) as-is.
+ * - Insert only missing nodes and their comments at the end of the correct parent section, using inferred indentation.
+ * - Create missing intermediate sections when a parent section does not exist.
  *
- * 安全策略（宁可少写也不错写）：
- * - 制表符缩进的文件直接跳过（缩进推断不可靠，写错会产生重复键 → 配置非法）；
- * - 同名键在同一层级已存在、但它不是节（如 `a: 5`）、或要写的叶子已存在 → 跳过该节点；
- * - 无法定位父节时跳过该节点，绝不猜测位置。
+ * Safety policy (prefer omitting a node over inserting it incorrectly):
+ * - Skip files indented with tabs because indentation cannot be inferred reliably; an incorrect insertion could create duplicate keys and invalidate the configuration.
+ * - Skip a node if a same-named key already exists at the same level but is not a section (for example, `a: 5`), or if the target leaf already exists.
+ * - Skip a node if its parent section cannot be located; never guess its position.
  */
 object ConfigTextUpdater {
 
     /**
-     * @param presentPaths 已存在于配置中的点分路径（调用方用已加载的 config 判定，语义与 `config.contains` 一致）
-     * @return 实际写入的节点数；0 表示未做任何改动（无需写入，或全部跳过）
+     * @param presentPaths Dot-separated paths already in the configuration (determined by the caller using the loaded config, with semantics matching `config.contains`).
+     * @return The number of nodes actually written; 0 means no changes were made (nothing was needed or all nodes were skipped).
      */
     fun appendMissingNodes(file: File, nodes: List<SConfigNode>, presentPaths: Set<String>): Int {
         if (!file.isFile) return 0
@@ -34,7 +34,7 @@ object ConfigTextUpdater {
 
         val original = file.readText()
         if (original.isBlank()) return 0
-        // 制表符缩进：不猜，直接跳过
+        // Do not guess indentation when tabs are used; skip the file.
         if (original.lineSequence().any { it.startsWith("\t") }) return 0
 
         val nl = if (original.contains("\r\n")) "\r\n" else "\n"
@@ -54,7 +54,7 @@ object ConfigTextUpdater {
         return inserted
     }
 
-    // ------------------------------------------------------------------ 单节点插入
+    // ------------------------------------------------------------------ Single-node insertion
 
     private fun insertOne(
         text: String,
@@ -70,18 +70,18 @@ object ConfigTextUpdater {
         val parts = node.path.split('.')
         val step = detectIndentStep(lines)
 
-        // ---- 逐级定位已存在的祖先节 ----
+        // ---- Locate existing ancestor sections level by level ----
         var rangeStart = 0
         var rangeEnd = contentEnd
         var parentIndent = -1
-        var insertAt = contentEnd          // 顶层新增：追加到文件末尾
-        var createFrom = 0                 // 从第几个组件起需要新建
+        var insertAt = contentEnd          // Top-level addition: append to the end of the file.
+        var createFrom = 0                 // Index of the first component that needs to be created.
 
         for (i in 0 until parts.size - 1) {
             val wantIndent = if (parentIndent < 0) 0 else parentIndent + step
             val idx = findSectionLine(lines, rangeStart, rangeEnd, parts[i], wantIndent)
             if (idx < 0) {
-                // 同级已有同名键，但它不是节（例如 `a: 5`）→ 在这里建子节点会产生重复键
+                // A same-named key exists at this level but is not a section (for example, `a: 5`); adding a child here would create duplicate keys.
                 if (findAnyKeyLine(lines, rangeStart, rangeEnd, parts[i], wantIndent) >= 0) return null
                 createFrom = i
                 break
@@ -93,7 +93,7 @@ object ConfigTextUpdater {
             createFrom = i + 1
         }
 
-        // ---- 组装插入块：缺失的中间节 + 叶子 ----
+        // ---- Assemble the insertion block: missing intermediate sections plus the leaf ----
         val block = ArrayList<String>()
         var indent = if (parentIndent < 0) 0 else parentIndent + step
         for (i in createFrom until parts.size - 1) {
@@ -106,7 +106,7 @@ object ConfigTextUpdater {
         }
 
         val leafKey = parts.last()
-        // 目标层级已有同名键 → 不重复插入（isPresent 判定偏差时的兜底）
+        // Do not insert a same-named key that already exists at the target level (fallback for an inaccurate isPresent check).
         if (findAnyKeyLine(lines, rangeStart, rangeEnd, leafKey, indent) >= 0) return null
 
         node.comment.takeIf { it.isNotBlank() }
@@ -114,7 +114,7 @@ object ConfigTextUpdater {
             ?.forEach { block += commentLine(indent, it) }
         block += renderValue(indent, leafKey, node.default, step)
 
-        // ---- 拼接 ----
+        // ---- Concatenate ----
         val out = ArrayList<String>(lines.size + block.size + 2)
         out.addAll(lines.subList(0, insertAt))
         if (separate && insertAt > 0 && lines[insertAt - 1].isNotBlank()) out += ""
@@ -123,9 +123,9 @@ object ConfigTextUpdater {
         return out.joinToString(nl)
     }
 
-    // ------------------------------------------------------------------ 行扫描
+    // ------------------------------------------------------------------ Line scanning
 
-    /** 行首空格数（文件含制表符缩进时本类整体不参与，见 [appendMissingNodes]）。 */
+    /** Number of leading spaces on a line (this class skips files containing tab indentation; see [appendMissingNodes]). */
     private fun indentOf(line: String): Int {
         var i = 0
         while (i < line.length && line[i] == ' ') i++
@@ -138,7 +138,7 @@ object ConfigTextUpdater {
         return rest.startsWith(":") || rest.startsWith(" :")
     }
 
-    /** 在 [from, to) 内找到缩进为 [indent] 的同名键行（不要求是节）。 */
+    /** Finds a line with the same key and [indent] indentation in [from, to); it does not have to be a section. */
     private fun findAnyKeyLine(lines: List<String>, from: Int, to: Int, key: String, indent: Int): Int {
         for (i in from until minOf(to, lines.size)) {
             val line = lines[i]
@@ -151,7 +151,7 @@ object ConfigTextUpdater {
         return -1
     }
 
-    /** 同 [findAnyKeyLine]，但要求该行是「节」（冒号后为空或仅注释）。 */
+    /** Same as [findAnyKeyLine], but requires the line to be a section (nothing or only a comment after the colon). */
     private fun findSectionLine(lines: List<String>, from: Int, to: Int, key: String, indent: Int): Int {
         val i = findAnyKeyLine(lines, from, to, key, indent)
         if (i < 0) return -1
@@ -161,8 +161,8 @@ object ConfigTextUpdater {
     }
 
     /**
-     * 节 [keyIdx] 的「内容末尾」下标（= 最后一个内容行的下一行）。
-     * 扫描时跳过空行、在遇到缩进不深于本节的行时停止，因此插入点会落在尾部空行之前。
+     * Index of the end of section [keyIdx]'s content (the line after its last content line).
+     * Skips blank lines while scanning and stops at a line with indentation no deeper than the section, so insertion occurs before trailing blank lines.
      */
     private fun blockContentEnd(lines: List<String>, keyIdx: Int, limit: Int): Int {
         val keyIndent = indentOf(lines[keyIdx])
@@ -179,7 +179,7 @@ object ConfigTextUpdater {
         return last + 1
     }
 
-    /** 推断文件的缩进步长：取第一处「子键比父键更深」的差值，取不到就用 2。 */
+    /** Infers the indentation step from the first child key that is deeper than its parent; defaults to 2 if none is found. */
     private fun detectIndentStep(lines: List<String>): Int {
         var prevIndent = -1
         for (line in lines) {
@@ -194,7 +194,7 @@ object ConfigTextUpdater {
         return 2
     }
 
-    // ------------------------------------------------------------------ YAML 文本生成
+    // ------------------------------------------------------------------ YAML text generation
 
     private fun commentLine(indent: Int, content: String): String {
         val pad = " ".repeat(indent)
@@ -217,10 +217,10 @@ object ConfigTextUpdater {
         }
     }
 
-    /** 可以不加引号的普通标量（避免把 `en_US`、`localhost` 这类写成 `"en_US"`）。 */
+    /** Plain scalars that do not need quotes (avoids writing values such as `en_US` and `localhost` as `"en_US"`). */
     private val PLAIN_SAFE = Regex("^[A-Za-z0-9_][A-Za-z0-9_.\\-/]*$")
 
-    /** YAML 里会被解析成别的类型的字面量，作为字符串必须加引号。 */
+    /** Literals that YAML would parse as another type and must therefore be quoted when used as strings. */
     private val RESERVED = setOf("true", "false", "null", "yes", "no", "on", "off", "y", "n", "~")
 
     private fun scalar(value: Any?): String = when (value) {

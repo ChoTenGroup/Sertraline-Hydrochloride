@@ -5,13 +5,13 @@ import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
 
 /**
- * 安全地遍历目录，支持深度限制和符号链接保护。
+ * Safely walks a directory with a depth limit and symlink protection.
  *
- * @param root 根目录
- * @param maxDepth 最大深度限制（默认10）
- * @param followSymlinks 是否跟随符号链接（默认false）
- * @param filter 文件过滤器
- * @return 符合条件的文件列表
+ * @param root The root directory.
+ * @param maxDepth The maximum depth (defaults to 10).
+ * @param followSymlinks Whether to follow symbolic links (defaults to false).
+ * @param filter The file filter.
+ * @return The list of matching files.
  */
 fun safeWalkDirectory(
     root: File,
@@ -46,7 +46,7 @@ fun safeWalkDirectory(
             }
 
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-                // 防止循环引用
+                // Prevent cycles.
                 if (dir in visited) {
                     return FileVisitResult.SKIP_SUBTREE
                 }
@@ -55,12 +55,12 @@ fun safeWalkDirectory(
             }
 
             override fun visitFileFailed(file: Path, exc: java.io.IOException?): FileVisitResult {
-                // 跳过无法访问的文件
+                // Skip inaccessible files.
                 return FileVisitResult.CONTINUE
             }
         })
     } catch (e: Exception) {
-        // 如果Files.walkFileTree失败，回退到简单遍历
+        // Fall back to a simple walk if Files.walkFileTree fails.
         fallbackWalkDirectory(root, maxDepth, 0, filter, result, visited.map { it.toString() }.toMutableSet())
     }
 
@@ -91,7 +91,7 @@ private fun File.relativePathString(root: File): String {
 }
 
 /**
- * 回退的目录遍历方法（当Files.walkFileTree失败时使用）
+ * Fallback directory walk used when Files.walkFileTree fails.
  */
 private fun fallbackWalkDirectory(
     directory: File,
@@ -127,14 +127,14 @@ private fun fallbackWalkDirectory(
 }
 
 /**
- * 安全地遍历目录中的文件（简化版本）
+ * Safely walks files in a directory (simplified version).
  */
 fun safeListFiles(directory: File, maxDepth: Int = 10): List<File> {
     return safeWalkDirectory(directory, maxDepth) { it.isFile }
 }
 
 /**
- * 安全地遍历目录中的目录（简化版本）
+ * Safely walks directories in a directory (simplified version).
  */
 fun safeListDirectories(directory: File, maxDepth: Int = 10): List<File> {
     return safeWalkDirectory(directory, maxDepth) { it.isDirectory }

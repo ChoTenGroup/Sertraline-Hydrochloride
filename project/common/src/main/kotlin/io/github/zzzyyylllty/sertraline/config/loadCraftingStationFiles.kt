@@ -41,7 +41,7 @@ fun loadCraftingStationFiles(context: LoadContext? = null) {
 
 fun loadCraftingStationFile(file: File, regex: Regex, context: LoadContext? = null): Boolean {
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回false
+        // Directory recursion is handled by safeWalkDirectory; return false here.
         return false
     }
 

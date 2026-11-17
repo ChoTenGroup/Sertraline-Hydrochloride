@@ -27,7 +27,7 @@ fun Player.applyActions(trigger: String, e: Event, ce: Cancellable?, i: ItemStac
         ).getAsActions()
     }
     val actions = allActions?.get(trigger) ?: return
-    // 在循环外一次性解析 item 和 data，避免多线程竞争同一个局部变量
+    // Resolve item and data once outside the loop to avoid competing accesses to the same local variables across threads.
     // deepCopy: the serializer's fast path returns the *live* registry template, and action code is
     // free to write to the item it receives (set-var / lore actions) — that used to mutate the cache.
     val resolvedItem = itemSerializer(id, player)?.deepCopy() ?: return

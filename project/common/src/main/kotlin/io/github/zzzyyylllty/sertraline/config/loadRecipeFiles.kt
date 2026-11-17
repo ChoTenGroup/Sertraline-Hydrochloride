@@ -32,8 +32,8 @@ fun loadRecipeFiles() {
 }
 
 /**
- * 阶段 1（可在任意线程）：遍历 recipes/ 目录，解析并校验全部候选 recipe，
- * 不触碰 Bukkit recipe registry。解析失败按条目记账，不扩大为整文件失败。
+ * Phase 1 (any thread): walk the recipes/ directory and parse and validate all candidate recipes
+ * without touching the Bukkit recipe registry. Track parse failures per entry instead of failing the whole file.
  */
 fun prepareRecipeCandidates(): List<RecipeData> {
     SertralineRecipeFileLoadPreEvent().call()
@@ -56,8 +56,8 @@ fun prepareRecipeCandidates(): List<RecipeData> {
 }
 
 /**
- * 阶段 2（主线程）：用候选整体替换 Bukkit 中的已注册 recipe。
- * 旧集合先注销，候选注册失败按条目记账；commit 整体异常时恢复旧集合。
+ * Phase 2 (main thread): replace all registered Bukkit recipes with the candidates.
+ * Unregister the old set first and track candidate registration failures per entry; restore the old set if the overall commit fails.
  */
 fun commitRecipeCandidates(candidates: List<RecipeData>): Pair<Int, Int> {
     return try {
@@ -71,12 +71,12 @@ fun commitRecipeCandidates(candidates: List<RecipeData>): Pair<Int, Int> {
 }
 
 /**
- * 解析单个 recipe 文件为候选列表（不注册）。
+ * Parses a single recipe file into a candidate list without registering it.
  * @return Pair(recipes parsed successfully, errors)
  */
 private fun parseRecipeFileCandidates(file: File, regex: Regex): List<RecipeData> {
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回空列表
+        // Directory recursion is handled by safeWalkDirectory; return an empty list here.
         return emptyList()
     }
 
@@ -121,9 +121,8 @@ private fun Map<String, Any?>.getFlexibleList(key: String): List<Any?> {
 }
 
 /**
- * 严格解析正整数字段（数量类：count/amount）。存在但不是合法整数、或 < 1 时抛出
- * IllegalArgumentException，而不是静默回退 1 —— 静默 fallback 会掩盖配置错误并
- * 改变加载结果。
+ * Strictly parses a positive integer field (such as count/amount). If the field exists but is not a valid integer or is less than 1,
+ * throws IllegalArgumentException instead of silently falling back to 1, which would hide configuration errors and change the loaded result.
  */
 private fun requirePositiveInt(map: Map<String, Any?>, key: String, contextName: String): Int {
     val raw = map[key] ?: return 1
@@ -134,7 +133,7 @@ private fun requirePositiveInt(map: Map<String, Any?>, key: String, contextName:
 }
 
 /**
- * 严格解析 cooking time：存在时必须是非负整数（0 允许，如瞬间烹饪）。
+ * Strictly parses cooking time: if present, it must be a non-negative integer (0 is allowed for instant cooking).
  */
 private fun requireNonNegativeInt(map: Map<String, Any?>, key: String, contextName: String, default: Int): Int {
     val raw = map[key] ?: return default
@@ -145,7 +144,7 @@ private fun requireNonNegativeInt(map: Map<String, Any?>, key: String, contextNa
 }
 
 /**
- * 严格解析 experience：存在时必须是 finite 且非负的数字。
+ * Strictly parses experience: if present, it must be a finite, non-negative number.
  */
 private fun requireNonNegativeFloat(map: Map<String, Any?>, key: String, contextName: String, default: Float): Float {
     val raw = map[key] ?: return default
@@ -378,8 +377,8 @@ private fun parseIngredientFromString(str: String): RecipeIngredient {
 
     return when {
         base.startsWith("#") || base.startsWith("tag:") -> RecipeIngredient.Tag(base, amount)
-        // 保留裸名原样：由 resolveRecipeReference 先按原版材质解析、失败再回落 Sertraline，
-        // 这样旧配方里裸写的原版材质与裸写的 Sertraline 物品都能继续工作
+        // Keep bare names unchanged: resolveRecipeReference first parses them as vanilla materials, then falls back to Sertraline.
+        // This keeps both bare vanilla material names and bare Sertraline item names working in existing recipes.
         else -> RecipeIngredient.Item(base, amount)
     }
 }

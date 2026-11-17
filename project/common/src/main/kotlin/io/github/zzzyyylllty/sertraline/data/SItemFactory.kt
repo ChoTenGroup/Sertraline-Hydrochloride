@@ -6,12 +6,12 @@ import io.github.zzzyyylllty.sertraline.logger.warningS
 import org.bukkit.Material
 
 /**
- * 物品的唯一创建与恢复入口。
+ * The single entry point for creating and restoring items.
  *
- * 所有构造 `AbstractSItem` 的路径都必须经过这里，原因：
- * 1. Gson 不会按 `sItemType` 自动选择实现类，多态恢复必须显式分发；
- * 2. `shouldAdapt` 是 `@Transient` 的运行时策略，反序列化后是 JVM 默认值，
- *    只能由本工厂按来源重新赋值。
+ * All paths that construct an `AbstractSItem` must go through this factory because:
+ * 1. Gson does not select an implementation based on `sItemType`; polymorphic restoration must dispatch explicitly.
+ * 2. `shouldAdapt` is a `@Transient` runtime policy that has the JVM default value after deserialization,
+ *    so this factory must reassign it based on the source.
  */
 object SItemFactory {
 
@@ -19,15 +19,15 @@ object SItemFactory {
     const val TYPE_MINECRAFT = "minecraft"
     const val TYPE_EXTERNAL = "plugin"
 
-    /** 无命名空间前缀时视为 Sertraline 物品。 */
+    /** Treat an item without a namespace prefix as a Sertraline item. */
     private const val NAMESPACE_SEPARATOR = "::"
 
     private val minecraftAliases = setOf("minecraft", "mc", "vanilla")
     private val sertralineAliases = setOf("sertraline", "depazitems", "depaz")
 
-    // ---------------------------------------------------------------- 创建
+    // ---------------------------------------------------------------- Creation
 
-    /** 创建 Sertraline 物品。 */
+    /** Creates a Sertraline item. */
     fun sertraline(
         key: String,
         data: LinkedHashMap<String, Any?> = linkedMapOf(),
@@ -35,7 +35,7 @@ object SItemFactory {
         shouldAdapt: Boolean = true,
     ): ModernSItem = ModernSItem(key, data, config).also { it.shouldAdapt = shouldAdapt }
 
-    /** 创建原版物品。 */
+    /** Creates a vanilla Minecraft item. */
     fun minecraft(
         key: String,
         minecraftId: String,
@@ -45,7 +45,7 @@ object SItemFactory {
     ): MinecraftSItem = MinecraftSItem(key, minecraftId, TYPE_MINECRAFT, data, config)
         .also { it.shouldAdapt = shouldAdapt }
 
-    /** 创建外部插件物品。 */
+    /** Creates an external plugin item. */
     fun external(
         externalItemData: ExternalItemData,
         data: LinkedHashMap<String, Any?> = linkedMapOf(),
@@ -59,19 +59,19 @@ object SItemFactory {
         externalItemData = externalItemData
     ).also { it.shouldAdapt = shouldAdapt }
 
-    // ---------------------------------------------------------------- 解析
+    // ---------------------------------------------------------------- Parsing
 
-    /** 物品来源类别，供各处解析逻辑共用，避免别名集合散落成多份。 */
+    /** Item source category shared by parsers to avoid maintaining duplicate alias sets. */
     enum class SourceKind { SERTRALINE, MINECRAFT, EXTERNAL }
 
     /**
-     * 按命名空间判定来源类别。
+     * Determines the source category from a namespace.
      *
-     * 这是全项目唯一的命名空间别名表：`OmniItem`、`itemSource`、配方解析都应调用它，
-     * 而不是各自维护一份 `minecraft/mc/vanilla` 列表。
+     * This is the project's single namespace alias table. `OmniItem`, `itemSource`, and recipe parsing should all use it
+     * instead of maintaining separate `minecraft/mc/vanilla` lists.
      */
     fun classify(namespace: String?): SourceKind {
-        // 允许 null：Gson 可以绕过 Kotlin 非空检查把字段填成 null，这里必须兜住而不是 NPE
+        // Allow null: Gson can bypass Kotlin's non-null checks and assign null to the field, so handle it here instead of throwing an NPE.
         val lowered = namespace?.trim()?.lowercase() ?: return SourceKind.EXTERNAL
         return when (lowered) {
             in sertralineAliases -> SourceKind.SERTRALINE
@@ -81,13 +81,13 @@ object SItemFactory {
     }
 
     /**
-     * 把 `sItemType::id` 形式的引用解析成具体物品。
+     * Resolves an `sItemType::id` reference into a concrete item.
      *
-     * - 无 `::` 的裸 ID 按 Sertraline 物品处理（保持既有语义）；
-     * - `minecraft::stone` 解析为原版物品；
-     * - `provider::id` 解析为外部插件物品。
+     * - A bare ID without `::` is treated as a Sertraline item (preserving existing semantics).
+     * - `minecraft::stone` resolves to a vanilla item.
+     * - `provider::id` resolves to an external plugin item.
      *
-     * 只解析结构，不查询注册表；是否已注册由调用方判断。
+     * Parses the reference structure only; the caller determines whether the item is registered.
      */
     fun parse(reference: String): AbstractSItem? {
         val trimmed = reference.trim()
@@ -108,16 +108,16 @@ object SItemFactory {
         }
     }
 
-    // ---------------------------------------------------------------- 恢复
+    // ---------------------------------------------------------------- Restoration
 
     /**
-     * 从 JSON 恢复物品。
+     * Restores an item from JSON.
      *
-     * 旧数据没有 `sItemType` 字段，默认按 [ModernSItem] 恢复，保证既有数据库与缓存可读。
+     * Older data has no `sItemType` field, so restore it as [ModernSItem] to keep existing databases and caches readable.
      *
-     * 恢复后统一走 [validate]：Gson 用反射填字段，**不调用 Kotlin 构造函数、不执行默认值表达式**，
-     * 因此 `data` / `config` / `externalItemData` 在 JSON 缺字段时会变成 `null` 并绕过非空检查。
-     * 不在这里兜底的话，坏数据会在第一个 `storageKey` / `hasPlaceholders` 访问处变成 NPE。
+     * All restored objects go through [validate]. Gson populates fields by reflection and **does not call Kotlin constructors or evaluate default expressions**,
+     * so missing `data` / `config` / `externalItemData` fields in JSON become `null` and bypass non-null checks.
+     * Without validation, malformed data would cause an NPE on the first access to `storageKey` / `hasPlaceholders`.
      */
     fun deserialize(json: String?): AbstractSItem? {
         if (json.isNullOrBlank()) return null
@@ -126,8 +126,8 @@ object SItemFactory {
             jsonUtils.fromJson(json, com.google.gson.JsonObject::class.java)
         }.getOrNull() ?: return null
 
-        // 分派必须与 classify/parse 一致地忽略大小写与首尾空白，否则 "Minecraft" 会被
-        // 静默降级成 ModernSItem，并永久丢掉 minecraftId
+        // Dispatch must ignore case and surrounding whitespace, just like classify/parse; otherwise, "Minecraft" would
+        // silently fall back to ModernSItem and permanently lose minecraftId.
         val type = runCatching {
             root.get("sItemType")?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.lowercase()
         }.getOrNull()
@@ -171,9 +171,9 @@ object SItemFactory {
     }
 
     /**
-     * 补回 Gson 反射路径跳过的非空约束。
+     * Restores non-null constraints skipped by Gson's reflection-based deserialization.
      *
-     * 返回 null 表示数据不可恢复，调用方应当跳过它而不是让它进入注册表。
+     * Returning null means the data cannot be restored; callers should skip it instead of adding it to the registry.
      */
     private fun validate(item: AbstractSItem): AbstractSItem? {
         if (item.data == null || item.config == null) {
@@ -206,7 +206,7 @@ object SItemFactory {
         return item
     }
 
-    /** 单独恢复一个已构造对象（例如来自缓存的实例）的运行时状态。 */
+    /** Restores runtime state for an already constructed object, such as an instance from the cache. */
     fun restoreRuntimeState(item: AbstractSItem): AbstractSItem {
         when (item) {
             is MinecraftSItem -> {

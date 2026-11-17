@@ -178,7 +178,7 @@ class PrivateManager {
             val ids = sequenceOf(id, legacyId).filterNotNull().distinct()
             for (candidateId in ids) {
                 val result = DatabaseManager.privateItemMapper.findOneByKey(privateItemProbe(uuid, candidateId)) ?: continue
-                // 单条数据反序列化失败只跳过该条，不能让整个查找（含 legacy 回退）短路
+                // Skip only the entry that fails to deserialize; do not abort the whole lookup, including the legacy fallback.
                 val restored = deserializeSertraline(result.itemData)
                 if (restored == null) {
                     warningS("[PrivateManager] Item '$candidateId' for UUID $uuid is not a Sertraline item, skipping")

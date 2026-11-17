@@ -88,14 +88,14 @@ object ApiCommand {
         }
     }
     /**
-     * JavaScript（JSR 223 / Nashorn 路径）。
+     * JavaScript (JSR 223 / Nashorn path).
      *
-     * 与 `eval $` 的区别：这里**不需要** `$` 前缀，整段参数就是 JS 源码，
-     * 适合在控制台/RCON 里直接调试 API。
+     * Unlike `eval $`, this command **does not require** the `$` prefix; the entire argument is JavaScript source,
+     * making it suitable for debugging the API directly from the console or RCON.
      *
-     * 走 [ScriptHelper] 而不是 TabooLib 的 `compileJS`：后者用的是 TabooLib 自己的引擎，
-     * 其类加载器看不到插件类，`Java.type('io.github.zzzyyylllty.sertraline...')` 会直接
-     * `ClassNotFoundException`；而 [GraalJsUtil.nashornEngineHolder] 是用插件类加载器建引擎的。
+     * It uses [ScriptHelper] instead of TabooLib's `compileJS`. The latter uses TabooLib's own engine,
+     * whose class loader cannot see plugin classes, so `Java.type('io.github.zzzyyylllty.sertraline...')` throws
+     * `ClassNotFoundException`. [GraalJsUtil.nashornEngineHolder] creates the engine with the plugin class loader.
      */
     @CommandBody
     val evalJS = subCommand {
@@ -118,9 +118,9 @@ object ApiCommand {
     }
 
     /**
-     * GraalJS（`GraalJsUtil`，ES2023，性能更好）。
+     * GraalJS (`GraalJsUtil`, ES2023, with better performance).
      *
-     * 同样不需要 `$` 前缀；注入了与脚本系统一致的默认变量。
+     * This command also does not require the `$` prefix and receives the same default variables as the script system.
      */
     @CommandBody
     val evalGraalJs = subCommand {
@@ -140,10 +140,10 @@ object ApiCommand {
     }
 
     /**
-     * 这两个 eval 子命令都跑在 `submitAsync` 的异步线程上，而该线程的上下文类加载器是
-     * 服务端/paperclip 的，不是插件类加载器。`Java.type` 与 Nashorn 的类解析都依赖它，
-     * 不切换就会得到 `ClassNotFoundException` / `Access to host class ... not allowed`。
-     * GraalJS 的白名单本身是允许 `io.github.zzzyyylllty.sertraline.*` 的，缺的正是这里。
+     * Both eval subcommands run on the asynchronous `submitAsync` thread, whose context class loader belongs to
+     * the server/paperclip rather than the plugin. `Java.type` and Nashorn class resolution depend on it;
+     * without switching loaders, they fail with `ClassNotFoundException` or `Access to host class ... not allowed`.
+     * GraalJS already allows `io.github.zzzyyylllty.sertraline.*`; switching the loader here is the missing step.
      */
     private inline fun <T> withPluginClassLoader(block: () -> T): T {
         val thread = Thread.currentThread()

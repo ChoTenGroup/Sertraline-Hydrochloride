@@ -113,7 +113,7 @@ public interface SertralineAPI {
      */
     @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI.getItem"))
      public fun getItem(s: String): ModernSItem? {
-        // 注册表已泛化为 AbstractSItem；旧签名保持 JVM ABI 不变，非 Sertraline 物品返回 null
+        // The registry now uses AbstractSItem; keep the legacy signature's JVM ABI unchanged and return null for non-Sertraline items.
         return Sertraline.itemMap[s] as? ModernSItem
     }
 
@@ -131,7 +131,7 @@ public interface SertralineAPI {
      * map have no effect on the live registry, and concurrent reloads never surface
      * as partial views in the returned snapshot.
      *
-     * 仅包含 Sertraline 物品；其他来源请使用 [SertralineItemAPI]。
+     * Contains only Sertraline items; use [SertralineItemAPI] for other sources.
      */
     @Deprecated("Use SertralineItemAPI instead", ReplaceWith("SertralineItemAPI.getAllItems"))
      public fun getAllItems(): Map<String, ModernSItem> {

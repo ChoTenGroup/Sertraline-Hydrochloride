@@ -33,33 +33,33 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * `rebuild.keep-data` 里与「版本号」相关的键：更新器必须让**新**版本号生效。
- * 若把这些键按旧物品回填，物品的 revision 永远停留在旧值 → 每次检查都会重建一次，永不收敛。
+ * Keys in `rebuild.keep-data` related to revisions: the updater must allow the **new** revision to take effect.
+ * Restoring these keys from the old item would leave the revision unchanged, causing every check to rebuild the item indefinitely.
  */
 private val REVISION_KEEP_KEYS = setOf("sertraline_revision")
 
 /**
- * 无论 `rebuild.keep-data` 怎么配都必须保留的键。
+ * Keys that must be preserved regardless of `rebuild.keep-data` settings.
  *
- * `sertraline_data` 是物品的运行时变量（脚本写入的击杀数/绑定玩家等）。重建路径上它有两重保障：
- * builder 会把旧值作为 `overrideData["sertraline:vars"]` 传进构建（改动折叠后也会体现在里面），
- * 更新器这里再合并一次，保证「模板新声明的默认值补上、旧值不丢」。
- * 丢变量属于数据丢失而非格式偏好，所以这里不交给配置决定。
+ * `sertraline_data` stores runtime item variables (such as script-written kill counts or bound players). It has two safeguards during rebuild:
+ * the builder passes old values as `overrideData["sertraline:vars"]` (including folded alterations), and
+ * the updater merges them again to add newly declared template defaults without losing old values.
+ * Losing variables is data loss, not a formatting preference, so this behavior is not configurable.
  */
 private val ALWAYS_KEEP_DATA = setOf("sertraline_data")
 
 /**
- * 需要「合并」而不是整体替换的键（见 [preserveKeptData]）：模板新声明的默认值必须补上，
- * 否则更新后的物品与新建物品的 NBT 不一致，两者无法堆叠。
+ * Keys that must be merged rather than replaced wholesale (see [preserveKeptData]): add newly declared template defaults,
+ * or updated items will have different NBT from newly created items and cannot stack with them.
  */
 private val MERGE_DATA_KEYS = setOf("sertraline_data")
 
 /**
- * 更新时必须一并保留的「玩家自己写进物品里的内容组件」。
+ * Player-authored content components that must be preserved during updates.
  *
- * 干净基底会把物品变回定义的样子，但潜影盒内容 / 收纳袋内容 / 弩里装着的箭 / 玩家写好的书
- * 这些是玩家数据而不是定义数据，丢了就是删档（`rebuild.keep-component` 的默认表没有覆盖它们）。
- * 这类内容本来就会阻止堆叠（原版潜影盒装东西后也不能堆叠），所以保留它们不会引入新的堆叠问题。
+ * A clean base restores the item to its definition, but shulker box contents, bundle contents, loaded crossbow arrows, and player-written books
+ * are player data rather than definition data. Losing them would destroy player data (the default `rebuild.keep-component` list does not cover them).
+ * This content already prevents stacking (vanilla shulker boxes with contents cannot stack), so preserving it does not introduce new stacking issues.
  */
 private val ALWAYS_KEEP_COMPONENT = setOf(
     "minecraft:container",
@@ -69,7 +69,7 @@ private val ALWAYS_KEEP_COMPONENT = setOf(
     "minecraft:profile"
 )
 
-/** 通知合并：同一批检查（登录/容器/定时扫描）只发一条消息，延迟 1 tick 统一结算。 */
+/** Coalesces notifications so one batch of checks (login/container/periodic scan) sends one message, settled together after 1 tick. */
 private const val NOTIFY_FLUSH_DELAY = 1L
 private val pendingNotify = ConcurrentHashMap<UUID, AtomicInteger>()
 
@@ -77,8 +77,8 @@ private val pendingNotify = ConcurrentHashMap<UUID, AtomicInteger>()
  * Gets the expected revision number of an item
  * Priority: explicit value > auto tracking
  *
- * 注意：私有物品（`private:`/`__` 前缀）的模板按 owner 存在数据库里，自动追踪（[initRevisionAutoTracker]）
- * 无法遍历它们，因此只有显式声明 `sertraline:revision-id` 的私有物品会被更新。
+ * Note: templates for private items (with `private:`/`__` prefixes) are stored in the database by owner, so automatic tracking ([initRevisionAutoTracker])
+ * cannot enumerate them. Only private items that explicitly declare `sertraline:revision-id` are updated.
  */
 fun getExpectedRevision(itemId: String, player: Player? = null, ownerUuid: String? = null): Int {
     val normalizedId = if (isPrivateItemId(itemId)) {

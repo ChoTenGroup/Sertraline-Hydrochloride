@@ -84,7 +84,7 @@ object SertralineRecipeManager {
             }
             return Pair(loaded, errors)
         } catch (e: Throwable) {
-            // 补偿：恢复旧注册集（registerRecipe 按相同 id 生成相同的 NamespacedKey）
+            // Compensate by restoring the old registrations (registerRecipe generates the same NamespacedKey for the same ID).
             severeS("Recipe commit failed, restoring previous recipes: ${e.message}")
             registeredRecipes.clear()
             for ((_, recipeData) in oldEntries) {

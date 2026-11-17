@@ -19,15 +19,15 @@ fun loadMappingFiles(context: LoadContext? = null) {
     SertralineMappingFileLoadPreEvent(context).call()
     try {
         // `replace = true` is the intended contract, NOT an accident: the packaged file says so
-        // in its own header ("请勿直接修改这个文件 / 因为每次重启都会覆盖该文件 /
-        // 如想要添加映射请在此目录下建立更多文件添加"). Custom mappings belong in EXTRA files in
+        // in its own header explaining that the file is overwritten on every restart and custom mappings
+        // should be added in separate files in this directory. Custom mappings belong in EXTRA files in
         // this directory — the loader merges every file matching `file-load.mapping`, so a
         // user-authored file is never touched by this release.
         //
         // Writing it only when missing (replace = false) looked safer but breaks every upgrade:
         // a server that installed an older jar keeps its stale copy forever and silently loses
         // mappings added in later versions — which surfaces as
-        // "为配置项 sertraline:gem-slots 的 Mappings 未找到" and broken gem slots.
+        // the missing Mappings warning for sertraline:gem-slots and broken gem slots.
         releaseResourceFile("internal/mapping/mappings.yml", true)
         val mappingFolder = File(getDataFolder(), "internal/mapping")
         if (!mappingFolder.exists()) {
@@ -118,7 +118,7 @@ fun loadMappingFile(file: File, regex: Regex, context: LoadContext? = null) {
     devLog("Loading file ${file.name}")
 
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回
+        // Directory recursion is handled by safeWalkDirectory; return here.
         return
     }
 
@@ -133,8 +133,8 @@ fun loadMappingFile(file: File, regex: Regex, context: LoadContext? = null) {
         val mapped = listValue.filterIsInstance<String>()
 
         if (context != null) {
-            // candidate 模式：写入局部 context（candidate 之间合并，不读 live ——
-            // 增量语义由 reload 流程在发布时合并 live 旧值处理）
+            // Candidate mode: write to the local context (merge candidates without reading live).
+            // The reload process handles incremental semantics by merging old live values when publishing.
             val existing = context.mappings[key]
             if (existing != null) {
                 existing.addAll(mapped)
@@ -144,7 +144,7 @@ fun loadMappingFile(file: File, regex: Regex, context: LoadContext? = null) {
                 devLog("Mapping Loaded: $key - $mapped")
             }
         } else {
-            // 兼容入口：直接写 live 表（既有行为）
+            // Compatibility entry point: write directly to the live table (existing behavior).
             val existing = mappings[key]
             if (existing != null) {
                 val merged = existing.toMutableList()

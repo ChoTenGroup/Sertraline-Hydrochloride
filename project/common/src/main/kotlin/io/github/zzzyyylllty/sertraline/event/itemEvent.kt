@@ -4,11 +4,11 @@ import io.github.zzzyyylllty.sertraline.config.LoadContext
 import taboolib.platform.type.BukkitProxyEvent
 
 /**
- * 单个物品定义解析事件。
+ * Event for parsing a single item definition.
  *
- * [context] 非 null 时表示处于 reload 候选构建阶段：监听器应把结果写入
- * [LoadContext]（见 itemModuleSave），而不是写 live `Sertraline.itemMap`。
- * null 时为兼容入口（外部调用方手动 fire），行为与旧版一致。
+ * A non-null [context] means this is the candidate build phase of a reload: listeners should write results to
+ * [LoadContext] (see itemModuleSave) instead of the live `Sertraline.itemMap`.
+ * A null context is the compatibility entry point for external callers that fire the event manually; behavior matches the previous version.
  */
 class ItemLoadEvent(
     val itemKey: String,
@@ -18,10 +18,10 @@ class ItemLoadEvent(
 ) : BukkitProxyEvent()
 
 /**
- * 物品 feature 解析事件。
+ * Event for parsing item features.
  *
- * [context] 非 null 时 feature 解析（tier/type/level/mapping 查找）应优先读取
- * [LoadContext] 的候选表；null 时读 live registry。
+ * When [context] is non-null, feature parsing (tier/type/level/mapping lookup) should check the candidate tables in
+ * [LoadContext] first; when it is null, read from the live registry.
  */
 class FeatureLoadEvent(
     val sItemKey: String?,

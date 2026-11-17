@@ -8,9 +8,9 @@ import org.bukkit.inventory.ItemStack
 
 
 /**
- * 原版物品。
+ * Vanilla Minecraft item.
  *
- * [key] 是来源内部标识（例如 `stone`），[minecraftId] 是用于解析 [Material] 的名称。
+ * [key] is the source-local identifier (for example, `stone`); [minecraftId] is the name used to resolve the [Material].
  */
 data class MinecraftSItem(
 
@@ -27,7 +27,7 @@ data class MinecraftSItem(
     override val storageKey: String
         get() = "minecraft::$key"
 
-    /** 运行时策略，由 SItemFactory 赋值，不参与序列化。 */
+    /** Runtime policy assigned by SItemFactory; not serialized. */
     @Transient
     override var shouldAdapt: Boolean = false
 

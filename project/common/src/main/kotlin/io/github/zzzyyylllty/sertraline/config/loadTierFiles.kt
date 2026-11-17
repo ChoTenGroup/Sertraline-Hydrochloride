@@ -46,7 +46,7 @@ fun loadTierFile(file: File, regex: Regex, context: LoadContext? = null) {
     devLog("Loading tier file ${file.name}")
 
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回
+        // Directory recursion is handled by safeWalkDirectory; return here.
         return
     }
 
@@ -78,7 +78,7 @@ fun loadTier(key: String, arg: Map<String, Any?>, context: LoadContext? = null) 
         extra = c.getDeep(arg, "extra") as? Map<String, Any?> ?: mapOf(),
         meta = c.getDeep(arg, "meta") as? Map<String, Any?> ?: mapOf()
     )
-    // context 模式写 candidate；无 context（兼容入口）写 live 表
+    // Write to candidate in context mode; write to the live table without a context (compatibility entry point).
     if (context != null) context.tiers[key] = tier else tiers[key] = tier
     devLog("Loaded tier: $key")
 }

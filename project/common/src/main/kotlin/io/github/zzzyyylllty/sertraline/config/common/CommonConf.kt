@@ -8,8 +8,8 @@ import taboolib.module.configuration.Configuration
 import java.io.File
 
 /**
- * 单个配置节点：路径 / 默认值 / 注释。
- * 注册表驱动配置文件生成与自动更新（缺失节点在加载时自动补写并附带注释）。
+ * A single configuration node: path, default value, and comment.
+ * Generates and automatically updates configuration files from a registry, adding missing nodes and their comments during loading.
  */
 class SConfigNode(
     val path: String,
@@ -18,48 +18,48 @@ class SConfigNode(
 )
 
 /**
- * 单条配置迁移：把配置从 v(N-1) 升到 vN。
+ * A single configuration migration, upgrading a configuration from v(N-1) to vN.
  *
- * 迁移脚本直接操作 [Configuration]，可配合下方 `migrate*` 扩展函数完成
- * 结构变更（重命名/移动/删除/改默认值）。版本由 [SConfigSpec.upgrade] 按序驱动。
+ * Migration scripts operate directly on [Configuration] and can use the `migrate*` extension functions below
+ * to make structural changes (rename, move, delete, or change a default value). [SConfigSpec.upgrade] applies migrations in order.
  */
 fun interface ConfigMigration {
     fun migrate(config: Configuration)
 }
 
-/** 仅当节点缺失时写入默认值（不覆盖用户已有值）。 */
+/** Writes the default value only when the node is missing; does not overwrite existing user values. */
 fun Configuration.migrateSetDefault(path: String, value: Any?) {
     if (!contains(path)) set(path, value)
 }
 
-/** 节点重命名：存在时复制旧值到新路径并删除旧路径。 */
+/** Renames a node by copying its value to the new path and deleting the old path when it exists. */
 fun Configuration.migrateRename(oldPath: String, newPath: String) {
     val v = get(oldPath) ?: return
     set(newPath, v)
     set(oldPath, null)
 }
 
-/** 删除节点（null 值触发 nightconfig 移除）。 */
+/** Deletes a node (a null value causes nightconfig to remove it). */
 fun Configuration.migrateRemove(path: String) {
     set(path, null)
 }
 
 /**
- * 被 TabooLib 的注释往返污染的空行：整行只有 `# null`。
+ * Blank lines corrupted by TabooLib's comment round-trip, where the entire line contains only `# null`.
  *
- * 成因（TabooLib，非本插件）：
- * - `YamlCommentLoader.getCommentLines` 把注释块里的空行表示为 **null**
+ * Cause (in TabooLib, not this plugin):
+ * - `YamlCommentLoader.getCommentLines` represents blank lines in comment blocks as **null**.
  *   （`CommentType.BLANK_LINE -> lines.add(null)`）；
- * - `ConfigSection.setComments` 用 `comments.joinToString("\n")` 落盘，
- *   而 `joinToString` 会把 null 元素字符串化成字面量 `null`；
- * - 于是配置文件里每个用来分隔的空行，保存后都会变成 `# null`。
+ * - `ConfigSection.setComments` writes comments using `comments.joinToString("\n")`,
+ *   and `joinToString` converts null elements into the literal string `null`.
+ * - As a result, every blank separator line in the configuration becomes `# null` when saved.
  *
- * TabooLib 是运行时注入的依赖，插件无法直接修补，因此在保存后把这类被污染的行还原为空行。
- * 只匹配「整行仅有 # null」，不会误伤用户自己写的注释。
+ * TabooLib is injected at runtime and cannot be patched directly by the plugin, so restore these corrupted lines to blank lines after saving.
+ * Match only lines containing exactly `# null` to avoid affecting user-written comments.
  */
 private val MANGLED_NULL_COMMENT = Regex("^[ \\t]*# null[ \\t]*$", RegexOption.MULTILINE)
 
-/** 见 [MANGLED_NULL_COMMENT]。文件内容未变化时不写盘。 */
+/** See [MANGLED_NULL_COMMENT]. Does not write the file when its contents have not changed. */
 private fun File.repairMangledCommentLines() {
     if (!isFile) return
     val text = readText()
@@ -70,8 +70,8 @@ private fun File.repairMangledCommentLines() {
 }
 
 /**
- * 一个配置文件的规格：文件名 + 节点注册表 + 目标 schema 版本 + 迁移表。
- * 通过 [bind] 加载并自动升级，[sync] 完成缺失节点补写。
+ * Specification for one configuration file: filename, node registry, target schema version, and migration table.
+ * [bind] loads and upgrades the file; [sync] adds missing nodes.
  */
 class SConfigSpec(
     val fileName: String,
@@ -84,7 +84,7 @@ class SConfigSpec(
 
     val file: File get() = File(getDataFolder(), fileName)
 
-    /** 从磁盘加载（不存在时释放内建资源），随后版本迁移 + 缺失节点补写。返回是否发生了改动。 */
+    /** Loads from disk (releasing the bundled resource if absent), then migrates the version and adds missing nodes. Returns whether anything changed. */
     fun bind(): Boolean {
         if (!file.exists()) {
             releaseResourceFile(fileName, true)
@@ -92,23 +92,23 @@ class SConfigSpec(
         config = Configuration.loadFromFile(file)
         val upgraded = upgrade()
         val synced = sync()
-        // 即使本轮无需迁移/补写，也顺手清理历史版本落盘时写坏的 `# null` 注释行
+        // Clean up `# null` comment lines corrupted by older releases even when this pass needs no migration or node additions.
         file.repairMangledCommentLines()
         return upgraded || synced
     }
 
-    /** 保存配置，并把 TabooLib 落盘时被字符串化的空注释行还原（见 [MANGLED_NULL_COMMENT]）。 */
+    /** Saves the configuration and restores blank comment lines that TabooLib serialized as strings (see [MANGLED_NULL_COMMENT]). */
     private fun saveRepaired() {
         config.saveToFile()
         file.repairMangledCommentLines()
     }
 
-    /** 读文件内 config-version（缺失视为 0：即未纳入版本系统前的任何旧文件）。 */
+    /** Reads config-version from the file (missing means 0, for files from before versioning was introduced). */
     private fun readVersion(): Int = config.getInt("config-version", 0)
 
     /**
-     * 版本迁移：文件版本 < [version] 时，按序应用 `migrations[target]`（2..version）。
-     * 完成后把 config-version 写回**最后成功应用**的版本并保存，保证迁移幂等可重试。
+     * Migrates the file when its version is less than [version], applying `migrations[target]` in order (2..version).
+     * Writes and saves the **last successfully applied** version afterward, making migrations idempotent and retryable.
      */
     fun upgrade(): Boolean {
         val current = readVersion()
@@ -119,7 +119,7 @@ class SConfigSpec(
                 try {
                     m.migrate(config)
                 } catch (e: Exception) {
-                    // 停在失败版本；config-version 写回最后成功版本，下次启动重试失败的迁移
+                    // Stop at the failed migration; config-version remains at the last successful version so startup can retry it.
                     warningL("Config_Load_Error_Parse", fileName, "migration v$target: ${e.message}")
                     break
                 }
@@ -135,12 +135,12 @@ class SConfigSpec(
     }
 
     /**
-     * 配置自动更新：把注册表中文件缺失的节点补写到磁盘。
+     * Automatically updates configuration files by writing registry nodes that are missing from disk.
      *
-     * 这里走「文本插入」（[ConfigTextUpdater]），而不是 night-config 的 `set` + `saveToFile` 全量往返：
-     * 往返会重写整个文件，而 night-config 的注释模型（一个路径一个 String）装不下注释块里的空行，
-     * 每个分隔空行都会被写成 `# null`，还会顺带把 config-version 挪到文件末尾、丢掉头部注释。
-     * 补写只涉及新增节点，不需要改动任何已有文本，所以文本插入能把这些原样保住。
+     * Use text insertion ([ConfigTextUpdater]) instead of a full night-config `set` + `saveToFile` round-trip:
+     * a round-trip rewrites the whole file, and night-config's comment model (one String per path) cannot represent blank lines in comment blocks.
+     * Each blank separator would become `# null`, config-version would move to the end of the file, and header comments would be lost.
+     * Only missing nodes need to be added, so text insertion preserves all existing text as-is.
      */
     fun sync(): Boolean {
         val present = nodes.filter { config.contains(it.path) }.map { it.path }.toSet()
@@ -162,7 +162,7 @@ class SConfigSpec(
             )
         }
 
-        // 磁盘已更新：重新载入内存副本，后续读路径（SertralineSettings）能看到新节点
+        // The disk file has changed; reload the in-memory copy so subsequent reads through SertralineSettings see the new nodes.
         try {
             config.reload()
         } catch (e: Exception) {

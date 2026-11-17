@@ -5,18 +5,18 @@ import taboolib.common5.Coerce
 import taboolib.module.configuration.Configuration
 
 /**
- * config.yml / experimental.yml 的不可变运行时快照。
+ * Immutable runtime snapshot of config.yml and experimental.yml.
  *
- * 由 [SertralineSettings.load] 一次性构建并整体发布；业务代码读取一律经由
- * [SertralineSettings] 的兼容 getter（转发到当前快照），保证并发读者要么看到
- * 完整的旧快照、要么看到完整的新快照，不会观察到逐字段写入的中间态。
+ * Built by [SertralineSettings.load] and published as a whole. Business code reads values through
+ * the compatibility getters on [SertralineSettings] (which forward to the current snapshot), ensuring concurrent readers see
+ * either the complete old snapshot or the complete new snapshot, never an intermediate state with only some fields updated.
  *
- * 动态节点（注册表中没有强类型字段的路径，如 modules.<name>.feature / tags.<name> /
- * action.throttle.<trigger>）在构建时拷贝为只读 [dynamic] map，[raw] 系列访问器
- * 基于它工作，不再触碰可变 Configuration。
+ * Dynamic nodes (paths without strongly typed registry fields, such as modules.<name>.feature, tags.<name>, and
+ * action.throttle.<trigger>) are copied into a read-only [dynamic] map during construction. The [raw] accessors
+ * use this map and no longer access the mutable Configuration.
  */
 class SettingsSnapshot internal constructor(
-    // ==================== 元信息 ====================
+    // ==================== Metadata ====================
     val configVersion: Int,
 
     // ==================== config.yml ====================
@@ -24,7 +24,7 @@ class SettingsSnapshot internal constructor(
     val lang: String,
     val asyncLogging: Boolean,
 
-    // metrics（启动期一次性读取；FastStats context 不随 reload 重建）
+    // Metrics (read once at startup; the FastStats context is not recreated on reload).
     val metricsEnabled: Boolean,
     val metricsToken: String,
     val metricsErrorTracking: Boolean,
@@ -45,7 +45,7 @@ class SettingsSnapshot internal constructor(
     val itemUpdateAsyncInterval: Int,
     val itemUpdateNotify: Boolean,
 
-    // file-load（预编译正则）
+    // File loading (precompiled regular expressions).
     val fileLoadItem: Regex,
     val fileLoadLoreFormat: Regex,
     val fileLoadMapping: Regex,
@@ -78,7 +78,7 @@ class SettingsSnapshot internal constructor(
     val attributeArmorChangePolling: Boolean,
     val actionThrottleTime: Long,
 
-    // database（启动期一次性读取，restart-only）
+    // Database (read once at startup; restart-only).
     val databaseEnable: Boolean,
     val databaseFilename: String,
     val databaseHost: String,
@@ -107,11 +107,11 @@ class SettingsSnapshot internal constructor(
     val fastMinimessage: Boolean,
     val fastMinimessageCacheSize: Int,
 
-    // ==================== 动态节点 ====================
-    /** 动态节点的只读快照（路径 → 原始值，值本身在加载时已 unwrap，只读遍历安全）。 */
+    // ==================== Dynamic nodes ====================
+    /** Read-only snapshot of dynamic nodes (path -> raw value; values are unwrapped during loading and safe to traverse). */
     val dynamic: Map<String, Any?>,
 ) {
-    /** file-load 正则按配置节名（item/recipe/...）索引的视图，供非法 regex 时的 last-good 回退。 */
+    /** View of file-load regexes indexed by configuration section (item/recipe/...), used as the last-good fallback for invalid regexes. */
     val fileLoadPatterns: Map<String, Regex> = mapOf(
         "item" to fileLoadItem,
         "lore-format" to fileLoadLoreFormat,
@@ -124,12 +124,12 @@ class SettingsSnapshot internal constructor(
     )
 
     /**
-     * 读取动态节点原始值。与旧 `Configuration.get(path)` 语义一致：
-     * TabooLib 的 get 返回 unwrap 后的原始对象，这里直接从快照 map 取。
+     * Reads the raw value of a dynamic node, matching the old `Configuration.get(path)` semantics:
+     * TabooLib's get returns the unwrapped object, so this reads it directly from the snapshot map.
      */
     fun raw(path: String): Any? = dynamic[path]
 
-    /** 缺失返回 [def]；与 Coerce.toBoolean 语义一致（"1"/"true"/"yes" → true）。 */
+    /** Returns [def] when missing; follows Coerce.toBoolean semantics ("1"/"true"/"yes" -> true). */
     fun rawBoolean(path: String, def: Boolean): Boolean =
         Coerce.toBoolean(dynamic[path] ?: def)
 
@@ -139,18 +139,18 @@ class SettingsSnapshot internal constructor(
     fun rawLong(path: String, def: Long): Long =
         Coerce.toLong(dynamic[path] ?: def)
 
-    /** 仅当值本身是 List 时返回（与旧 `get(path) as? List<Any?>` 一致）。 */
+    /** Returns a value only when it is a List (matching the old `get(path) as? List<Any?>` behavior). */
     fun rawList(path: String): List<Any?>? = dynamic[path] as? List<Any?>
 
     companion object {
 
         /**
-         * 从两个已 bind/upgrade/sync 的 spec 构建快照。
+         * Builds a snapshot from two specs that have already been bound, upgraded, and synchronized.
          *
-         * 动态节点快照 = 主配置全量扁平键 − 注册表强类型字段已覆盖的路径。
-         * 实现上直接拷贝全量键；强类型字段读取仍走 Configuration（构建期一次性读，
-         * 无并发问题），raw 访问器优先命中强类型路径时也只是一份最新值的拷贝，
-         * 二者来自同一轮 parse，不存在不一致窗口。
+         * Dynamic node snapshot = all flattened main configuration keys minus paths covered by strongly typed registry fields.
+         * The implementation copies all keys directly. Strongly typed fields are still read from Configuration once during construction,
+         * which has no concurrency issue. When a raw accessor finds a strongly typed path, it returns a copy of the latest value;
+         * both values come from the same parse, so there is no inconsistency window.
          */
         fun of(main: SConfigSpec, experimental: SConfigSpec): SettingsSnapshot {
             val c = main.config
@@ -161,8 +161,8 @@ class SettingsSnapshot internal constructor(
                 return try {
                     pattern.toRegex()
                 } catch (ex: Exception) {
-                    // fail closed：非法 regex 不回退 `.*`（那会悄悄扩大加载范围）。
-                    // reload 保留上一份有效 pattern；首次启动无 last-good 时用严格 no-match。
+                    // Fail closed: do not fall back to `.*` for an invalid regex, which would silently expand the load scope.
+                    // On reload, keep the previous valid pattern; on first startup with no last-good value, use a strict no-match pattern.
                     val lastGood = SertralineSettings.currentSnapshot().fileLoadPatterns[name]
                     if (lastGood != null) {
                         warningL("Config_Load_Error_Parse", "file-load.$name", "${ex.message ?: "Invalid regex"}; keeping previous pattern")
@@ -174,7 +174,7 @@ class SettingsSnapshot internal constructor(
                 }
             }
 
-            // 强类型字段已覆盖的路径集合（用于过滤动态map中的冗余数据）
+            // Paths covered by strongly typed fields (used to filter redundant values from the dynamic map).
             val strongTypedPaths = setOf(
                 "config-version", "debug", "lang", "async-logging",
                 "metrics.enabled", "metrics.token", "metrics.error-tracking", "metrics.custom-metrics",
@@ -201,7 +201,7 @@ class SettingsSnapshot internal constructor(
 
             val dynamic = HashMap<String, Any?>()
             for (key in c.getKeys(true)) {
-                // 过滤掉强类型字段已覆盖的路径，减少内存浪费
+                // Filter out paths already covered by strongly typed fields to reduce memory use.
                 if (key !in strongTypedPaths) {
                     dynamic[key] = c[key]
                 }
@@ -290,8 +290,8 @@ class SettingsSnapshot internal constructor(
         }
 
         /**
-         * bind 前的哨兵快照：全部字段为注册表/资源默认值，dynamic 为空 map。
-         * 仅在 SertralineConfigManager.bind 之前被读取（此时不应有业务读路径）。
+         * Sentinel snapshot used before bind: all fields use registry/resource defaults and dynamic is an empty map.
+         * Read only before SertralineConfigManager.bind (there should be no business read path yet).
          */
         fun ofDefault(): SettingsSnapshot = SettingsSnapshot(
             configVersion = 1,
@@ -374,8 +374,8 @@ class SettingsSnapshot internal constructor(
         )
 
         /**
-         * file-load 节点缺省时的默认 pattern（用户未配置 = 匹配全部文件，既有语义）。
-         * 注意：这不是非法 regex 的回退值——非法 regex 走 fail-closed（last-good 或 no-match）。
+         * Default pattern when a file-load node is missing (existing behavior: no user configuration means matching all files).
+         * Note: this is not the fallback for an invalid regex; invalid regexes fail closed (last-good or no-match).
          */
         val DEFAULT_FILE_LOAD_REGEX: Regex = Regex(".*")
     }

@@ -4,13 +4,13 @@ import io.github.zzzyyylllty.sertraline.logger.warningL
 import taboolib.module.configuration.Configuration
 
 /**
- * 普通配置文件统一入口。
+ * Unified entry point for regular configuration files.
  *
- * - 释放/加载 config.yml、experimental.yml
- * - 按注册表自动补写缺失节点（配置自动更新）
- * - 每轮构建不可变 [SettingsSnapshot] 并整体发布到 [SertralineSettings]
+ * - Releases/loads config.yml and experimental.yml.
+ * - Automatically adds missing nodes from the registry (configuration auto-update).
+ * - Builds an immutable [SettingsSnapshot] each time and publishes it to [SertralineSettings] as a whole.
  *
- * 在插件 ENABLE 周期最前调用 [bind]；reload 时调用 [reload]。
+ * Call [bind] at the start of the plugin's ENABLE phase and [reload] when reloading.
  */
 object SertralineConfigManager {
 
@@ -30,17 +30,17 @@ object SertralineConfigManager {
     @Volatile
     private var bound = false
 
-    /** 启动期捕获的 restart-only 数据库快照（连接/mapper 为 lazy 单例，重建需重启）。 */
+    /** Database restart-only snapshot captured at startup (connection/mapper are lazy singletons and require a restart to recreate). */
     @Volatile
     private var startupDatabaseSnapshot: DatabaseStartupValues? = null
 
-    /** 数据库 restart-only 值集合（与 DatabaseManager lazy dbConfig 实际消费的路径一致）。 */
+    /** Database restart-only values, matching the paths consumed by DatabaseManager's lazy dbConfig. */
     private class DatabaseStartupValues(
         val enable: Boolean,
         val filename: String,
     )
 
-    /** 绑定全部配置文件（幂等：LOAD 周期 PacketEventsUtil 早绑定后，ENABLE 周期再次调用直接跳过）。 */
+    /** Binds all configuration files (idempotent: skips the ENABLE call if PacketEventsUtil already bound them during LOAD). */
     fun bind() {
         if (bound) return
         synchronized(this) {
@@ -57,10 +57,10 @@ object SertralineConfigManager {
     }
 
     fun reload() {
-        // reloadSafely: TabooLib reload 是「先 clear 再 parse」，文件损坏时内存配置会被清空；
-        // 这里先快照旧内容，失败时恢复 last-good，保证 SertralineSettings 不会静默降级为默认值
+        // TabooLib reloadSafely clears the in-memory configuration before parsing, so a damaged file leaves it empty.
+        // Snapshot the old contents first and restore the last-good state on failure so SertralineSettings does not silently fall back to defaults.
         ConfigReloadGuard.reloadSafely(main.config, main.fileName)
-        // 运行期 reload 同样执行版本迁移（服务端热升级插件后生效），再补写缺失节点
+        // Runtime reload also performs version migrations (effective after a server-side plugin update), then adds missing nodes.
         main.upgrade()
         // Re-run sync on every reload so newly-registered nodes from a plugin upgrade
         // get appended to the on-disk file (preserving existing user values/comments).
@@ -73,9 +73,9 @@ object SertralineConfigManager {
     }
 
     /**
-     * restart-only 检测：packet.register（PacketEvents 生命周期在启动期决定）与
-     * database.*（mapper 连接为 lazy 单例）在 reload 中不会重建。检测到启动值
-     * 与当前文件不一致时输出提示，不热切换。
+     * Checks restart-only settings: packet.register (PacketEvents lifecycle is determined at startup) and
+     * database.* (mapper connection is a lazy singleton) are not recreated during reload. If a startup value
+     * differs from the current file, log a notice instead of hot-swapping it.
      */
     private fun checkRestartOnlyChanges() {
         val current = SertralineSettings.currentSnapshot()
@@ -86,11 +86,11 @@ object SertralineConfigManager {
                 warningL("Config_Restart_Required", "database")
             }
         }
-        // packet.register=false 时 PacketEvents 在启动期未初始化；运行期改回 true 不会生效
-        //（反向：启动 true 运行期改 false 只是不再被 packet handler 检查，无生命周期问题，无需提示）
+        // If packet.register was false, PacketEvents was not initialized at startup and changing it back to true at runtime has no effect.
+        // The reverse change (true at startup, then false at runtime) only stops packet handlers from checking it and needs no notice.
     }
 
-    /** 兼容旧调用点：主配置对象。 */
+    /** Main configuration object, retained for compatibility with existing call sites. */
     @Deprecated("Use SertralineSettings (snapshot) or SertralineConfigManager.main instead")
     val config: Configuration get() = main.config
 }

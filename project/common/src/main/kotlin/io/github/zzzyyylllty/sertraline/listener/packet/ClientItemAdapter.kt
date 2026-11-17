@@ -100,8 +100,8 @@ fun visualComponentSetterNMS(item: Any, sItem: AbstractSItem,serialized: ByteArr
         if (!filtered.isEmpty()) {
 
             filtered["material"]?.let {
-                // safe lookup：非法材质名不静默变�?STONE（那会伪装成真实物品），
-                // 保持原材质并在日志中报告
+                // Safe lookup: do not silently replace an invalid material name with STONE, which would misrepresent the item.
+                // Keep the original material and report the issue in the log.
                 val mat = runCatching { XMaterial.valueOf(it.toString().uppercase(java.util.Locale.ROOT)) }
                     .getOrNull()?.get()
                 if (mat != null) visualMaterial = mat
@@ -131,7 +131,7 @@ fun visualComponentSetterNMS(item: Any, sItem: AbstractSItem,serialized: ByteArr
                 when (key) {
                     "autoName" -> PlatformCompat.setDisplayName(meta, value.toString().toComponent())
                     "autoLore" -> PlatformCompat.setLore(meta, (value.asListEnhanced())?.toComponent() ?: listOf(value.toString().toComponent()))
-                    // 拒绝 NaN/Infinity/非有限值；非法配置跳过�?visual 而不是把整轮 render 打断
+                    // Reject NaN, Infinity, and other non-finite values; skip visual for invalid configuration instead of aborting the entire render pass.
                     "autoCMD" -> {
                         val d = value.toString().toDoubleOrNull()
                         if (d != null && d.isFinite()) PlatformCompat.setCustomModelData(meta, d.roundToInt())
@@ -157,7 +157,7 @@ fun visualComponentSetter(item: ItemStack, sItem: AbstractSItem): ItemStack {
 
     var resultItem = item
     filtered["material"]?.let {
-        // safe lookup：非法材质名保持原材质，不静默变�?STONE
+        // Safe lookup: keep the original material for invalid names instead of silently replacing it with STONE.
         val mat = runCatching { XMaterial.valueOf(it.toString().uppercase(java.util.Locale.ROOT)) }
             .getOrNull()?.get()
         if (mat != null) resultItem.type = mat

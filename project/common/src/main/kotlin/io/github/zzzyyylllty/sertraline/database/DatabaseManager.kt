@@ -9,11 +9,11 @@ object DatabaseManager {
 
     private val dbConfig: Any by lazy {
         if (SertralineSettings.databaseEnable) {
-            // MySQL 连接参数由 database 配置段承载，作为 mapper source
+            // MySQL connection parameters come from the database configuration section and are used as the mapper source.
             SertralineSettings.databaseSection!!
         } else {
-            // SQLite 文件必须落在插件数据目录（plugins/Sertraline/）下，并用 newFile 预先创建；
-            // 之前直接 File("...").db 使用相对路径，SQLite 驱动会把它建到服务器工作目录甚至因父目录不存在而无法创建
+            // The SQLite file must be inside the plugin data directory (plugins/Sertraline/) and created with newFile first.
+            // Using File("...").db with a relative path previously placed it in the server working directory or failed when its parent directory did not exist.
             newFile(getDataFolder(), "${SertralineSettings.databaseFilename}.db")
         }
     }

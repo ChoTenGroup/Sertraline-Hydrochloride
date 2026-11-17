@@ -107,22 +107,22 @@ data class ModernSItem(
     override val data: LinkedHashMap<String, Any?> = linkedMapOf(),
     override val config: LinkedHashMap<String, Any?> = linkedMapOf(),
     /**
-     * 序列化类型判别字段。
+     * Serialized type discriminator field.
      *
-     * 必须是真实字段而非计算属性：Gson 只按字段序列化，getter 不会写进 JSON，
-     * 那样多态恢复会永远退化回 ModernSItem。
+     * Must be a real field rather than a computed property: Gson serializes fields only and does not write getters to JSON.
+     * Otherwise, polymorphic restoration would always fall back to ModernSItem.
      *
-     * 放在末尾并带默认值，保持既有的位置参数构造调用兼容。
+     * Keep it at the end with a default value to preserve compatibility with existing positional constructor calls.
      */
     override val sItemType: String = "sertraline",
 ) : AbstractSItem {
 
-    /** Sertraline 物品的裸 key 就是跨来源唯一标识，保持既有查找语义不变。 */
+    /** A Sertraline item's bare key is unique across sources, preserving existing lookup semantics. */
     override val storageKey: String get() = key
 
     /**
-     * 运行时策略，由 [SItemFactory] 在创建/恢复时赋值，不参与序列化。
-     * 只控制构建期的 Adapter 管线。
+     * Runtime policy assigned by [SItemFactory] during creation/restoration; not serialized.
+     * Controls only the build-time Adapter pipeline.
      */
     @Transient
     override var shouldAdapt: Boolean = true
@@ -147,8 +147,8 @@ data class ModernSItem(
         get() = getDeepData("sertraline:dynamics") != null
 
     /**
-     * 从 config 的 `itemdef.material` 或 data 的 `minecraft:material` / `xbuilder:material` 解析基础材料。
-     * 无法解析时返回 AIR。
+     * Resolves the base material from config `itemdef.material` or data `minecraft:material` / `xbuilder:material`.
+     * Returns AIR if it cannot be resolved.
      */
     override fun getMaterial(): Material {
         val raw = getDeepData("xbuilder:material")
@@ -169,7 +169,7 @@ data class ModernSItem(
 
     /**
      * Builds the stack **from this instance's own `data`/`config`**, as the
-     * [AbstractSItem.buildItem] contract states ("先由来源自身构建基础 ItemStack").
+     * This follows the [AbstractSItem.buildItem] contract: the source first builds the base ItemStack.
      *
      * It used to delegate to `sertralineItemBuilder(key, player)`, which re-resolves the template
      * from the registry (`itemMap[key].deepCopy()`) and therefore threw away every override carried
@@ -183,8 +183,8 @@ data class ModernSItem(
 }
 
 /**
- * 兼容入口：旧调用方按 `ModernSItem` 恢复对象。
- * 新代码应使用 [SItemFactory.deserialize] 以支持多来源类型。
+ * Compatibility entry point: restores an object as `ModernSItem` for legacy callers.
+ * New code should use [SItemFactory.deserialize] to support multiple source types.
  */
 fun deserializeSItem(string: String): ModernSItem {
     val parsed = SItemFactory.deserialize(string)
@@ -194,8 +194,8 @@ fun deserializeSItem(string: String): ModernSItem {
 }
 
 /**
- * 只按 Sertraline 物品恢复，非 Sertraline 数据返回 null。
- * 私有物品表只存 Sertraline 物品，用它能避免把外部对象误当模板。
+ * Restores only Sertraline items and returns null for data from other sources.
+ * The private item table stores only Sertraline items, so this avoids treating external objects as templates.
  */
 fun deserializeSertraline(string: String?): ModernSItem? {
     return SItemFactory.deserialize(string) as? ModernSItem

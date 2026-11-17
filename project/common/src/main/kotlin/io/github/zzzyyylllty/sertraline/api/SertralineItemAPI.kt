@@ -12,25 +12,25 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 
 /**
- * 面向 [AbstractSItem] 的物品 API。
+ * Item API for [AbstractSItem].
  *
- * 与旧的 [SertralineAPI] 的区别：
- * - 参数与返回值使用 `AbstractSItem`，可以容纳 Sertraline / Minecraft / 外部插件物品；
- * - 键一律是 [AbstractSItem.storageKey]（Sertraline 为裸 `ITEMID`，
- *   Minecraft 为 `minecraft::ITEMID`，外部插件为 `provider::ITEMID`）。
+ * Differences from the legacy [SertralineAPI]:
+ * - Parameters and return values use `AbstractSItem`, supporting Sertraline, Minecraft, and external plugin items.
+ * - Keys always use [AbstractSItem.storageKey] (a bare `ITEMID` for Sertraline,
+ *   `minecraft::ITEMID` for Minecraft, and `provider::ITEMID` for external plugins).
  *
- * 旧 API 不会被移除，只是标记为 deprecated。
+ * The legacy API remains available and is only marked as deprecated.
  */
 public object SertralineItemAPI {
 
     /**
-     * 按 ID 查询物品。
+     * Looks up an item by ID.
      *
-     * 既接受裸 Sertraline ID（`ITEMID`），也接受带命名空间的引用
-     * （`minecraft::stone`、`provider::id`）。带命名空间的引用若未注册则返回 null。
+     * Accepts both bare Sertraline IDs (`ITEMID`) and namespaced references
+     * (`minecraft::stone`, `provider::id`). Returns null if a namespaced reference is not registered.
      *
-     * 注意**不会**做「带命名空间 → 裸 key」的回退：否则 `getItem("myprovider::gun")`
-     * 会命中一个同名的 Sertraline `gun`，把不同来源的物品串在一起。
+     * **No fallback from a namespaced reference to a bare key is performed.** Otherwise,
+     * `getItem("myprovider::gun")` could resolve to a Sertraline item named `gun`, mixing items from different sources.
      */
     public fun getItem(id: String): AbstractSItem? {
         Sertraline.itemMap[id]?.let { return it }
@@ -39,11 +39,11 @@ public object SertralineItemAPI {
     }
 
     /**
-     * 按 ItemStack 解析物品。
+     * Resolves an item from an ItemStack.
      *
-     * 优先返回**注册表里的实例**；未命中时返回 [itemSerializer] 解析出的实例
-     * （私有物品 `__`/`private:` 不在注册表中，只有这条路径能拿到），
-     * 因此返回值不保证已注册，需要判断时请用 [isRegistered]。
+     * Prefers the **instance in the registry**; if none is found, returns the instance parsed by
+     * [itemSerializer] (private items with the `__`/`private:` prefix are not registered and are only available this way).
+     * Therefore, the returned item is not guaranteed to be registered; use [isRegistered] to check.
      */
     public fun getItemFromStack(itemStack: ItemStack, player: Player? = null): AbstractSItem? {
         val template = itemSerializer(itemStack, player) ?: return null
@@ -52,30 +52,30 @@ public object SertralineItemAPI {
         return Sertraline.itemMap[template.storageKey] ?: template
     }
 
-    /** 当前注册表中所有物品（不可变快照，键为注册表实际键）。 */
+    /** All items in the current registry (an immutable snapshot keyed by the registry's actual keys). */
     public fun getAllItems(): Map<String, AbstractSItem> =
         java.util.Collections.unmodifiableMap(java.util.HashMap(Sertraline.itemMap))
 
-    /** 只返回 Sertraline 物品，键为 [AbstractSItem.storageKey]（对 Sertraline 即裸 key）。 */
+    /** Returns only Sertraline items, keyed by [AbstractSItem.storageKey] (the bare key for Sertraline). */
     public fun getSertralineItems(): Map<String, ModernSItem> =
         getAllItems().values.filterIsInstance<ModernSItem>().associateBy { it.storageKey }
 
-    /** 只返回原版物品，键为 `minecraft::$key`。 */
+    /** Returns only Minecraft items, keyed by `minecraft::$key`. */
     public fun getMinecraftItems(): Map<String, MinecraftSItem> =
         getAllItems().values.filterIsInstance<MinecraftSItem>().associateBy { it.storageKey }
 
-    /** 只返回外部插件物品，键为 `provider::$key`。 */
+    /** Returns only external plugin items, keyed by `provider::$key`. */
     public fun getExternalItems(): Map<String, ExternalPluginSItem> =
         getAllItems().values.filterIsInstance<ExternalPluginSItem>().associateBy { it.storageKey }
 
-    /** 物品是否已注册。 */
+    /** Whether the item is registered. */
     public fun isRegistered(id: String): Boolean = getItem(id) != null
 
     /**
-     * 注册物品。
+     * Registers an item.
      *
-     * 默认用 [AbstractSItem.storageKey] 作为键，避免不同来源的同名物品互相覆盖。
-     * 显式传 [id] 时按传入的键存储，调用方需自行保证不与其它条目冲突。
+     * Uses [AbstractSItem.storageKey] as the key by default, preventing same-named items from different sources from overwriting each other.
+     * When [id] is supplied explicitly, the caller is responsible for avoiding conflicts with other entries.
      */
     public fun register(item: AbstractSItem, id: String = item.storageKey) {
         val previous = Sertraline.itemMap.put(id, item)
@@ -87,23 +87,23 @@ public object SertralineItemAPI {
         }
     }
 
-    /** 更新已注册物品，返回被替换的旧物品。 */
+    /** Updates a registered item and returns the item it replaced. */
     public fun update(id: String, item: AbstractSItem): AbstractSItem? =
         Sertraline.itemMap.put(id, item)
 
-    /** 移除物品，返回被移除的旧物品。 */
+    /** Removes an item and returns the removed item. */
     public fun unregister(id: String): AbstractSItem? =
         Sertraline.itemMap.remove(id)
 
-    /** 当前注册物品数量。 */
+    /** The number of currently registered items. */
     public fun getItemCount(): Int = Sertraline.itemMap.size
 
     /**
-     * 解析一个物品引用（不查询注册表）。
-     * 裸 ID 解析为 Sertraline 物品，`minecraft::x` / `provider::x` 解析为对应来源。
+     * Resolves an item reference without querying the registry.
+     * A bare ID resolves to a Sertraline item; `minecraft::x` / `provider::x` resolve to their respective sources.
      */
     public fun parse(reference: String): AbstractSItem? = SItemFactory.parse(reference)
 
-    /** 构建物品；构建失败返回 AIR。 */
+    /** Builds an item, returning AIR if construction fails. */
     public fun build(item: AbstractSItem, player: Player?): ItemStack = item.buildItem(player)
 }

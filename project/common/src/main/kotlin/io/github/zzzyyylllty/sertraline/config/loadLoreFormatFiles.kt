@@ -48,8 +48,8 @@ import javax.script.CompiledScript
 private val packetLoreLF: Boolean get() = SertralineSettings.packetLore && DependencyHelper.pe
 
 /**
- * loreFormats 写入目标：context 模式写 candidate map；无 context（兼容入口）写 live 表。
- * switchable 解析期间的 containsKey/读 也必须走同一张表（先解析 normal 再解析 switchable）。
+ * loreFormats write target: the candidate map in context mode and the live table without a context (compatibility entry point).
+ * containsKey/read operations during switchable parsing must use the same table (normal formats are parsed before switchable ones).
  */
 private fun loreFormatSink(context: LoadContext?): MutableMap<String, AbstractLoreFormat> =
     context?.loreFormats ?: Sertraline.loreFormats
@@ -83,7 +83,7 @@ fun loadLoreFormatFile(file: File, regex: Regex, context: LoadContext? = null): 
     devLog("Loading file ${file.name}")
 
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回空map
+        // Directory recursion is handled by safeWalkDirectory; return an empty map here.
         return emptyMap()
     }
 

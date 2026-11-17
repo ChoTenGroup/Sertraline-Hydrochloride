@@ -9,9 +9,9 @@ import org.bukkit.inventory.ItemStack
 
 
 /**
- * 外部插件物品（ItemsAdder / Oraxen / Nexo / CraftEngine 等）。
+ * External plugin item (such as ItemsAdder, Oraxen, Nexo, or CraftEngine).
  *
- * 基础物品通过 ItemBridge 按 [ExternalItemData] 构建，不伪造 Bukkit Material。
+ * The base item is built through ItemBridge using [ExternalItemData]; no Bukkit Material is fabricated.
  */
 data class ExternalPluginSItem(
 
@@ -24,17 +24,17 @@ data class ExternalPluginSItem(
     val externalItemData: ExternalItemData,
 ) : AbstractSItem {
 
-    /** 由 provider 与物品 ID 组合，避免不同 provider 的同名物品冲突。 */
+    /** Combines the provider and item ID to prevent collisions between same-named items from different providers. */
     override val storageKey: String
         get() = "${externalItemData.source}::$key"
 
-    /** 运行时策略，由 SItemFactory 赋值，不参与序列化。 */
+    /** Runtime policy assigned by SItemFactory; not serialized. */
     @Transient
     override var shouldAdapt: Boolean = true
 
     /**
-     * 外部物品不保证对应 bukkit [Material]。
-     * 这里尝试无 Player 构建一次并取其材质；失败或未安装 provider 时返回 [Material.AIR]。
+     * An external item is not guaranteed to have a corresponding Bukkit [Material].
+     * Try building it once without a Player and read its material; return [Material.AIR] on failure or when the provider is not installed.
      */
     override fun getMaterial(): Material {
         return runCatching { buildBaseItem(null)?.type }.getOrNull() ?: Material.AIR

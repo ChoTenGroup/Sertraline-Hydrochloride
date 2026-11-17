@@ -23,14 +23,14 @@ fun itemModuleSave(e: ItemLoadEvent) {
             data[major] = majormap
         } else data[location] = entry.value
     }
-    // 统一经工厂创建，保证 shouldAdapt 等运行时状态由工厂赋值
+    // Create through the factory so it assigns runtime state such as shouldAdapt.
     val sItem = SItemFactory.sertraline(
         key = e.itemKey ?: return,
         data = data as LinkedHashMap<*, *> as LinkedHashMap<String, Any?>,
         config = e.arguments as LinkedHashMap<*, *> as LinkedHashMap<String, Any?>
     )
     itemDebugger(e, sItem)
-    // context 模式写 reload 候选表；null 为兼容入口，写 live 表（旧语义）
+    // In context mode, write to the reload candidate table; null is the compatibility entry point and writes to the live table (legacy behavior).
     val sink = e.context?.items ?: itemMap
     e.itemKey?.let { sink[it] = sItem }
 }

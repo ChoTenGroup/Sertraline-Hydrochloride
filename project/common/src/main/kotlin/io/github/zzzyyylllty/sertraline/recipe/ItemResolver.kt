@@ -185,7 +185,7 @@ object ItemResolver {
             trimmed.startsWith("#") || trimmed.startsWith("tag:") -> {
                 resolveTag(trimmed, 1)
             }
-            // 裸名交给 resolveRecipeReference 处理：原版优先，失败回落 Sertraline
+            // Let resolveRecipeReference handle bare names: try vanilla first, then fall back to Sertraline.
             else -> {
                 resolveItem(trimmed, 1)
             }

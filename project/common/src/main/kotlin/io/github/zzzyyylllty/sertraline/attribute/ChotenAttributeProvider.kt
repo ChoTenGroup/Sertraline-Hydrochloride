@@ -142,9 +142,9 @@ class ChotenAttributeProvider : AttributeProvider {
 
             chotenMutable.forEach { (key, value) ->
                 val atb = solveModifier(key, value)
-                // 必须用跨来源唯一的 storageKey，不能用裸 key：
-                // 外部/原版物品的裸 key 与 Sertraline 物品同名是常态，共用 UUID 会让
-                // addModifier 后者覆盖前者，玩家属性静默变少
+                // Use the storageKey, which is unique across sources, rather than the bare key.
+                // External or vanilla items commonly share a bare key with Sertraline items; reusing the UUID would make
+                // addModifier overwrite the earlier modifier, silently reducing the player's attributes.
                 val modifierUuid = (sItem.storageKey + "_" + slot + "_" + atb.atbID).generateUUID()
 
                 val modifier = AttributeModifier(

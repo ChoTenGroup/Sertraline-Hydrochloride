@@ -4,27 +4,27 @@ import taboolib.library.configuration.ConfigurationSection
 import taboolib.module.configuration.Configuration
 
 /**
- * 运行时配置访问入口（兼容保留的 object 门面）。
+ * Runtime configuration access point (the object facade is retained for compatibility).
  *
- * 实际数据归属不可变的 [SettingsSnapshot]：[SertralineConfigManager.bind]/[SertralineConfigManager.reload]
- * 每轮构建一个新快照并整体替换 `current` 引用。所有属性均为只读转发 getter，
- * 并发读者要么看到完整的旧快照、要么看到完整的新快照，不会观察到逐字段写入的中间态。
+ * The immutable [SettingsSnapshot] owns the actual data. [SertralineConfigManager.bind] and [SertralineConfigManager.reload]
+ * build a new snapshot each time and replace the `current` reference as a whole. All properties are read-only forwarding getters,
+ * so concurrent readers see either the complete old snapshot or the complete new snapshot, never a partially updated state.
  *
- * database.* 字段保留启动期一次性语义（DatabaseManager 连接为 lazy 单例，重建需重启）；
- * restart-only 值在运行期 reload 后发生变化时由 [SertralineConfigManager] 输出提示。
+ * database.* fields retain their startup-only semantics (DatabaseManager's connection is a lazy singleton and requires a restart to recreate).
+ * [SertralineConfigManager] reports restart-only values that change after a runtime reload.
  */
 object SertralineSettings {
 
-    /** 各配置文件引用（由 SertralineConfigManager.bind 填充）。 */
+    /** References to configuration files (populated by SertralineConfigManager.bind). */
     lateinit var mainSpec: SConfigSpec
         private set
     lateinit var experimentalSpec: SConfigSpec
         private set
 
-    /** 兼容旧调用点：主配置 Configuration 引用。 */
+    /** Main configuration reference, retained for compatibility with existing call sites. */
     val config: Configuration get() = mainSpec.config
 
-    /** bind 前的哨兵快照：全部为注册表默认值。 */
+    /** Sentinel snapshot before bind; all values use registry defaults. */
     private val INITIAL: SettingsSnapshot = SettingsSnapshot.ofDefault()
 
     @Volatile
@@ -37,7 +37,7 @@ object SertralineSettings {
     val lang: String get() = snap.lang
     val asyncLogging: Boolean get() = snap.asyncLogging
 
-    // metrics（启动期一次性读取，不随 reload 热更；FastStats context 只在 ENABLE 时创建一次）
+    // Metrics (read once at startup, not hot-reloaded; the FastStats context is created once during ENABLE).
     val metricsEnabled: Boolean get() = snap.metricsEnabled
     val metricsToken: String get() = snap.metricsToken
     val metricsErrorTracking: Boolean get() = snap.metricsErrorTracking
@@ -57,18 +57,19 @@ object SertralineSettings {
     val itemUpdateOnReload: Boolean get() = snap.itemUpdateOnReload
 
     /**
-     * 定时检查间隔（tick，0 = 禁用）。由 [io.github.zzzyyylllty.sertraline.function.update.ItemUpdateScheduler]
-     * 在主线程按间隔扫描在线玩家；间隔过小会在玩家多时产生主线程压力，繁忙服务器建议 6000（5 分钟）级别。
+     * Periodic check interval in ticks (0 = disabled). [io.github.zzzyyylllty.sertraline.function.update.ItemUpdateScheduler]
+     * scans online players on the main thread at this interval. A short interval can burden the main thread when many players are online;
+     * busy servers should use an interval around 6000 ticks (5 minutes).
      */
     val itemUpdateAsyncInterval: Int get() = snap.itemUpdateAsyncInterval
 
     /**
-     * 更新时是否通知玩家。同一批检查（登录/容器/定时扫描）合并为一条消息，
-     * 文案见 lang 的 `Item_Update_Notify`（{0} = 本次更新的物品数）。
+     * Whether to notify players when items are updated. Checks in the same batch (login, container, or periodic scan) are combined into one message.
+     * See `Item_Update_Notify` in the language files ({0} = number of items updated in this pass).
      */
     val itemUpdateNotify: Boolean get() = snap.itemUpdateNotify
 
-    // file-load（预编译）
+    // File loading (precompiled).
     val fileLoadItem: Regex get() = snap.fileLoadItem
     val fileLoadLoreFormat: Regex get() = snap.fileLoadLoreFormat
     val fileLoadMapping: Regex get() = snap.fileLoadMapping
@@ -101,7 +102,7 @@ object SertralineSettings {
     val attributeArmorChangePolling: Boolean get() = snap.attributeArmorChangePolling
     val actionThrottleTime: Long get() = snap.actionThrottleTime
 
-    // database（启动期一次性读取，不随 reload 热更；DatabaseManager 连接为 lazy 单例，重建需重启）
+    // Database (read once at startup, not hot-reloaded; DatabaseManager's connection is a lazy singleton and requires a restart to recreate).
     val databaseEnable: Boolean get() = snap.databaseEnable
     val databaseFilename: String get() = snap.databaseFilename
     val databaseHost: String get() = snap.databaseHost
@@ -131,9 +132,9 @@ object SertralineSettings {
     val fastMinimessageCacheSize: Int get() = snap.fastMinimessageCacheSize
 
     /**
-     * 读取指定节点的原始值（注册表里没有强类型快照的动态节点走这里，
-     * 例如 modules.<name>.feature / tags.<name> / action.throttle.<trigger>）。
-     * 基于当前不可变快照的动态 map，不再逐次读可变 Configuration。
+     * Reads the raw value of a node. Dynamic nodes without strongly typed snapshot fields use this path,
+     * such as modules.<name>.feature, tags.<name>, and action.throttle.<trigger>.
+     * Reads from the current immutable snapshot's dynamic map instead of the mutable Configuration.
      */
     fun raw(path: String): Any? = snap.raw(path)
 
@@ -145,16 +146,16 @@ object SertralineSettings {
 
     fun rawList(path: String): List<Any?>? = snap.rawList(path)
 
-    /** MySQL 配置段（供 DatabaseManager 作 mapper source 使用；lazy/restart-only）。 */
+    /** MySQL configuration section (used by DatabaseManager as the mapper source; lazy and restart-only). */
     val databaseSection: ConfigurationSection?
         get() = mainSpec.config.getConfigurationSection("database")
 
-    /** 当前快照（供需要一次性锁定整组设置的调用方使用，如 reload 比对 restart-only 变化）。 */
+    /** Current snapshot (for callers that need to capture a consistent set of settings, such as comparing restart-only values during reload). */
     fun currentSnapshot(): SettingsSnapshot = current
 
-    // ==================== 加载 ====================
+    // ==================== Loading ====================
 
-    /** 构建新快照并整体发布（bind/reload 共用；不做 database 启动值特殊处理——见 DatabaseManager 的 lazy 语义）。 */
+    /** Builds and publishes a new snapshot as a whole (shared by bind/reload; database startup values are not specially handled, per DatabaseManager's lazy semantics). */
     fun load(main: SConfigSpec, experimental: SConfigSpec) {
         mainSpec = main
         experimentalSpec = experimental

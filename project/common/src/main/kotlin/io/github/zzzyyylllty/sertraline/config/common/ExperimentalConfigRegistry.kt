@@ -1,14 +1,14 @@
 package io.github.zzzyyylllty.sertraline.config.common
 
 /**
- * experimental.yml 节点注册表。
+ * Node registry for experimental.yml.
  */
 object SertralineExperimentalRegistry {
 
-    /** experimental.yml schema 版本（由 SConfigSpec.upgrade 驱动迁移）。 */
+    /** experimental.yml schema version (migrations are driven by SConfigSpec.upgrade). */
     const val VERSION = 1
 
-    /** 版本迁移表：key = 迁移到的版本号（2..VERSION）。 */
+    /** Version migration table: key = target version (2..VERSION). */
     val migrations: Map<Int, ConfigMigration> = emptyMap()
 
     val nodes: List<SConfigNode> = listOf(

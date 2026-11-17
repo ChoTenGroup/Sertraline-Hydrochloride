@@ -45,7 +45,7 @@ fun loadLevelFile(file: File, regex: Regex, context: LoadContext? = null) {
     devLog("Loading level file ${file.name}")
 
     if (file.isDirectory) {
-        // 目录递归已由safeWalkDirectory处理，这里直接返回
+        // Directory recursion is handled by safeWalkDirectory; return here.
         return
     }
 

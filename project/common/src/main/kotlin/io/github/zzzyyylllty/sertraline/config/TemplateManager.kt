@@ -10,84 +10,84 @@ import kotlin.math.floor
 import kotlin.math.roundToLong
 
 /**
- * 模板系统管理器。
+ * Template system manager.
  *
- * 模板文件放置在 templates/ 目录下，支持 $template 指令在任意 YAML 文件中引用。
+ * Template files are stored in the templates/ directory and can be referenced from any YAML file with the $template directive.
  *
- * 模板语法：
- *   %{param}              - 参数引用
- *   %{param?:default}     - 带默认值的参数引用
- *   \{  \}                - 转义花括号（作为普通文本）
- *   \?:                   - 转义 ?:（作为普通文本）
+ * Template syntax:
+ *   %{param}              - Parameter reference
+ *   %{param?:default}     - Parameter reference with a default value
+ *   \{  \}                - Escaped braces (treated as plain text)
+ *   \?:                   - Escaped ?: (treated as plain text)
  *
- * 默认参数：
- *   _ID                   - 自动传入当前条目的根节点 key
+ * Default parameters:
+ *   _ID                   - The current entry's root node key, passed automatically
  *
- * 参数变换（$t）：
- *   在 $template.arguments 中使用 $t 指令对参数值进行变换：
- *   - type: when          - 按值映射
- *   - type: upper/lower   - 大小写转换
- *   - type: condition     - 条件选择
- *   - type: self_increase - 自增计数器
- *   - type: kether/...    - 脚本表达式
+ * Parameter transformations ($t):
+ *   Use the $t directive in $template.arguments to transform parameter values:
+ *   - type: when          - Map values
+ *   - type: upper/lower   - Change letter case
+ *   - type: condition     - Select a value based on a condition
+ *   - type: self_increase - Incrementing counter
+ *   - type: kether/...    - Script expression
  *
- * 类型转换（$c）：
- *   在参数值中使用 $c 指令转换最终类型：
+ * Type conversion ($c):
+ *   Use the $c directive in a parameter value to convert its final type:
  *   - type: int/double/string
  *   - round: cell/round/floor
  *
- * 特殊参数：
- *   _ORIGIN               - 在 $t/$c 配置中引用参数的原始值
+ * Special parameters:
+ *   _ORIGIN               - Reference the parameter's original value in a $t/$c configuration
  *
- * 合并规则：
- *   - 相同配置项：下方（后合并的）覆盖上方
- *   - 列表项：合并为同一个列表
+ * Merge rules:
+ *   - For duplicate keys, the later (lower) value overrides the earlier one.
+ *   - List entries are merged into a single list.
  */
 object TemplateManager {
 
-    // ==================== 自定义处理器接口 ====================
+    // ==================== Custom handler interfaces ====================
 
     /**
-     * $t 变换器自定义处理器。
-     * 通过 [registerTransformer] 注册，可在 YAML 中以 `$t: { type: your_type, ... }` 使用。
+     * Custom handler for a $t transformer.
+     * Register it with [registerTransformer], then use it in YAML as `$t: { type: your_type, ... }`.
      */
     fun interface TransformerProvider {
         /**
-         * @param type     实际使用的类型名（已小写化）
-         * @param config   $t 配置的完整 map
-         * @param resolveCtx 当前参数上下文，包含 _ID, _ORIGIN 等
-         * @return 变换后的字符串值
+         * @param type The type name in use, converted to lowercase.
+         * @param config The complete $t configuration map.
+         * @param resolveCtx The current parameter context, including _ID and _ORIGIN.
+         * @return The transformed string value.
          */
         fun process(type: String, config: Map<String, Any?>, resolveCtx: Map<String, String>): String
     }
 
     /**
-     * $c 转换器自定义处理器。
-     * 通过 [registerConverter] 注册，可在 YAML 中以 `$c: { type: your_type, ... }` 使用。
+     * Custom handler for a $c converter.
+     * Register it with [registerConverter], then use it in YAML as `$c: { type: your_type, ... }`.
      */
     fun interface ConverterProvider {
         /**
-         * @param type     实际使用的类型名（已小写化）
-         * @param config   $c 配置的完整 map
-         * @param value    待转换的字符串值（已通过 $t 变换）
-         * @param resolveCtx 当前参数上下文
-         * @return 转换后的字符串值
+         * @param type The type name in use, converted to lowercase.
+         * @param config The complete $c configuration map.
+         * @param value The string value to convert, after any $t transformation.
+         * @param resolveCtx The current parameter context.
+         * @return The converted string value.
          */
         fun process(type: String, config: Map<String, Any?>, value: String, resolveCtx: Map<String, String>): String
     }
 
     /**
-     * 参数级指令自定义处理器（与 $t/$c 同级）。
-     * 通过 [registerDirective] 注册，可在 arguments 中以 `$your_name: { ... }` 使用。
+     * Custom handler for a parameter-level directive (at the same level as $t/$c).
+     * Register it with [registerDirective], then use it in arguments as `$your_name: { ... }`.
      */
     fun interface DirectiveProvider {
         /**
-         * @param name       指令名（如 "$my_macro"）
-         * @param config     该指令对应的配置 map
-         * @param key        当前处理的参数键名
-         * @param currentArgs 当前静态参数 map（可修改）
-         * @param dynamicArgs 动态值供应商 map（可修改）
-         * @param resolveCtx 当前参数上下文
+         * @param name The directive name (for example, "$my_macro").
+         * @param config The configuration map for this directive.
+         * @param key The key of the parameter currently being processed.
+         * @param currentArgs The current static parameter map (mutable).
+         * @param dynamicArgs The dynamic value provider map (mutable).
+         * @param resolveCtx The current parameter context.
          */
         fun process(
             name: String,
@@ -110,16 +110,16 @@ object TemplateManager {
         templates.clear()
     }
 
-    /** 获取已加载的模板，不触发解析。 */
+    /** Returns a loaded template without triggering parsing. */
     fun getTemplate(name: String): Map<String, Any?>? = templates[name]
 
-    /** 获取所有已加载的模板名。 */
+    /** Returns the names of all loaded templates. */
     fun getTemplateNames(): Set<String> = templates.keys.toSet()
 
-    /** 获取所有已加载的模板（不可变快照）。 */
+    /** Returns an immutable snapshot of all loaded templates. */
     fun getAllTemplates(): Map<String, Map<String, Any?>> = templates.toMap()
 
-    /** 手动解析模板：深拷贝 → 参数替换 → 递归解析。 */
+    /** Manually resolves a template: deep copy, parameter substitution, then recursive resolution. */
     fun resolveTemplate(name: String, args: Map<String, String>): Map<String, Any?>? {
         val template = templates[name] ?: return null
         val resolved = resolveValue(deepClone(template), args)
@@ -127,34 +127,34 @@ object TemplateManager {
         return resolved as? Map<String, Any?>
     }
 
-    // ---- 自定义处理器注册 ----
+    // ---- Custom handler registration ----
 
-    /** 注册自定义 $t 变换器类型。 */
+    /** Registers a custom $t transformer type. */
     fun registerTransformer(type: String, provider: TransformerProvider) {
         customTransformerProviders[type.lowercase()] = provider
     }
 
-    /** 注销自定义 $t 变换器类型。 */
+    /** Unregisters a custom $t transformer type. */
     fun unregisterTransformer(type: String) {
         customTransformerProviders.remove(type.lowercase())
     }
 
-    /** 注册自定义 $c 转换器类型。 */
+    /** Registers a custom $c converter type. */
     fun registerConverter(type: String, provider: ConverterProvider) {
         customConverterProviders[type.lowercase()] = provider
     }
 
-    /** 注销自定义 $c 转换器类型。 */
+    /** Unregisters a custom $c converter type. */
     fun unregisterConverter(type: String) {
         customConverterProviders.remove(type.lowercase())
     }
 
-    /** 注册自定义参数级指令（与 $t/$c 同级）。 */
+    /** Registers a custom parameter-level directive (at the same level as $t/$c). */
     fun registerDirective(name: String, provider: DirectiveProvider) {
         customDirectiveProviders[name] = provider
     }
 
-    /** 注销自定义参数级指令。 */
+    /** Unregisters a custom parameter-level directive. */
     fun unregisterDirective(name: String) {
         customDirectiveProviders.remove(name)
     }
@@ -166,8 +166,8 @@ object TemplateManager {
             releaseResourceFolder("templates")
         }
 
-        // context 模式：解析到局部 candidate，构建完成后由 publishTemplates 整体发布；
-        // 无 context（兼容入口）：直接写 live 表。
+        // In context mode, resolve into a local candidate and publish it all at once with publishTemplates when building completes.
+        // Without a context (the compatibility entry point), write directly to the live table.
         val sink: MutableMap<String, Map<String, Any?>> = context?.templates ?: templates.also { it.clear() }
 
         var count = 0
@@ -184,8 +184,8 @@ object TemplateManager {
     }
 
     /**
-     * 用 candidate 整体替换 live 模板表（reload 构建成功后调用一次）。
-     * 无 candidate 时不做任何事（live 表保持现状，供非 context 路径使用）。
+     * Replaces the live template table with the candidate in one operation (called once after a successful reload build).
+     * Does nothing when there is no candidate, leaving the live table unchanged for non-context paths.
      */
     fun publishTemplates(candidate: Map<String, Map<String, Any?>>?) {
         if (candidate == null) return
@@ -194,11 +194,11 @@ object TemplateManager {
     }
 
     /**
-     * 解析整个数据 map 中的 $template 指令。
-     * 每个顶层条目自动获得 _ID 参数（值为该条目 key）。
+     * Resolves $template directives throughout a data map.
+     * Each top-level entry automatically receives the _ID parameter, set to that entry's key.
      *
-     * @param context 当前 reload 的候选构建上下文；非 null 时模板查找优先命中
-     * 本轮候选表（本轮刚加载的新模板对后续 loader 立即可见），未命中回读 live 表。
+     * @param context The candidate build context for the current reload. When non-null, template lookup checks
+     * the current candidate table first (newly loaded templates are immediately visible to later loaders), then the live table.
      */
     fun resolveInMap(data: Map<String, Any?>, context: LoadContext? = null): Map<String, Any?> {
         return data.mapValues { (key, value) ->
@@ -207,7 +207,7 @@ object TemplateManager {
         }
     }
 
-    // ==================== 递归解析 ====================
+    // ==================== Recursive resolution ====================
 
     @Suppress("UNCHECKED_CAST")
     private fun resolveValue(value: Any?, context: Map<String, String>, loadCtx: LoadContext? = null): Any? {
@@ -226,9 +226,9 @@ object TemplateManager {
     }
 
     /**
-     * 处理 $template 指令节点。
+     * Processes a $template directive node.
      *
-     * 节点结构：
+     * Node structure:
      * ```yaml
      * $template:
      *   use: template_name
@@ -260,49 +260,49 @@ object TemplateManager {
             return node.mapValues { (_, v) -> resolveValue(v, context, loadCtx) } as Map<String, Any?>
         }
 
-        // 提取并处理参数（支持 $t/$c 指令）
+        // Extract and process parameters (supports $t/$c directives).
         val rawArgs = directive["arguments"] as? Map<*, *>
         val (processedArgs, dynamicValues) = processArguments(rawArgs, context)
 
-        // 候选构建时优先读本轮候选模板，未命中回读 live 表
+        // During candidate building, check this reload's candidate templates first, then fall back to the live table.
         val template = (loadCtx?.templates?.get(templateName) ?: templates[templateName])
         if (template == null) {
             warningL("Config_Load_Error_Parse", "\$template", "template '$templateName' not found")
             return node.mapValues { (_, v) -> resolveValue(v, context, loadCtx) } as Map<String, Any?>
         }
 
-        // 深拷贝模板内容并替换参数（含动态值）
+        // Deep-copy the template content and substitute parameters, including dynamic values.
         val substituted = substituteParams(deepClone(template), processedArgs, dynamicValues)
 
-        // 递归解析（处理嵌套 $template）
+        // Resolve recursively to process nested $template directives.
         val fullyResolved = resolveValue(substituted, processedArgs, loadCtx)
 
-        // 合并节点中除 $template 外的其他字段
+        // Merge the node's other fields, excluding $template.
         val otherKeys = node.filterKeys { it != "\$template" }
         val resolvedOtherKeys = resolveValue(otherKeys, context, loadCtx)
 
         return mergeMaps(fullyResolved as Map<String, Any?>, resolvedOtherKeys as Map<String, Any?>)
     }
 
-    // ==================== 参数处理（$t / $c） ====================
+    // ==================== Parameter processing ($t / $c) ====================
 
     /**
-     * 处理 $template.arguments 中的参数值。
-     * 支持普通字符串值，以及带 $t（变换器）和/或 $c（类型转换器）的复杂值。
+     * Processes parameter values in $template.arguments.
+     * Supports plain string values and complex values with a $t transformer and/or a $c converter.
      *
-     * 两趟处理：
-     * - 第一趟：按声明顺序求出每个参数的「替换前文本」，同时让后续 $t 的 _ORIGIN / %{} 引用
-     *   能看到前面已声明的参数（与旧行为一致）。这一趟**只传空 dynamicValues**。
-     * - 第二趟：所有参数都收集完之后，再用完整的静态参数 + 动态参数统一替换 %{...}。
-     *   于是占位符可以引用**声明在后面**的参数，也可以引用 $t 产生的动态值
-     *   （如 `name: "Token #%{number}"` 配合 `number: {$t: {type: self_increase}}`）。
+     * Two-pass processing:
+     * - First pass: compute each parameter's pre-substitution text in declaration order, while allowing later $t _ORIGIN / %{} references
+     *   to see previously declared parameters (preserving the old behavior). **Pass an empty dynamicValues map during this pass.**
+     * - Second pass: after collecting every parameter, substitute all %{...} placeholders using the complete static and dynamic parameter maps.
+     *   Placeholders can then reference parameters **declared later** as well as dynamic values produced by $t
+     *   (for example, `name: "Token #%{number}"` together with `number: {$t: {type: self_increase}}`).
      *
-     * 动态值只在第二趟被消耗：若两趟都传 dynamicValues，同一个 %{number} 会取两次值，
-     * 自增计数器就会跳号。
+     * Dynamic values are consumed only during the second pass. If dynamicValues is supplied in both passes, the same %{number}
+     * would consume two values and cause the incrementing counter to skip numbers.
      *
-     * @param rawArgs 原始 arguments map
-     * @param baseContext 基础上下文（_ID 等）
-     * @return Pair(静态参数 map, 动态值供应商 map)
+     * @param rawArgs The original arguments map.
+     * @param baseContext The base context (such as _ID).
+     * @return A pair containing the static parameter map and dynamic value provider map.
      */
     private fun processArguments(
         rawArgs: Map<*, *>?,
@@ -313,7 +313,7 @@ object TemplateManager {
 
         if (rawArgs == null) return Pair(staticArgs, dynamicArgs)
 
-        // 替换前文本，供第二趟重新替换
+        // Pre-substitution text for the second pass.
         val rawValues = LinkedHashMap<String, String>()
 
         for ((rawKey, rawValue) in rawArgs) {
@@ -347,7 +347,7 @@ object TemplateManager {
             }
         }
 
-        // 第二趟：用完整参数集重新替换（动态值只在这里被消耗）
+        // Second pass: substitute again using the complete parameter set (dynamic values are consumed only here).
         for ((key, raw) in rawValues) {
             staticArgs[key] = substituteParamsInString(raw, staticArgs, dynamicArgs)
         }
@@ -356,9 +356,9 @@ object TemplateManager {
     }
 
     /**
-     * 处理带 $t 和/或 $c 的单个参数值。
+     * Processes one parameter value with $t and/or $c.
      *
-     * @param rawValues 求出但尚未做 %{} 替换的最终文本，交给 [processArguments] 第二趟统一替换
+     * @param rawValues The resolved final text before %{} substitution; [processArguments] performs substitution in its second pass.
      */
     private fun processArgWithTC(
         key: String,
@@ -367,7 +367,7 @@ object TemplateManager {
         dynamicArgs: MutableMap<String, () -> String>,
         rawValues: MutableMap<String, String>
     ) {
-        // _ORIGIN 为该参数在当前上下文中已有的值，传入 $t/$c 配置供引用
+        // _ORIGIN is the value already present for this parameter in the current context; pass it to the $t/$c configuration for reference.
         val hadOrigin = currentArgs.containsKey(key)
         val origin = currentArgs[key] ?: ""
         val resolveCtx = currentArgs.toMap() + mapOf("_ORIGIN" to origin)
@@ -383,8 +383,8 @@ object TemplateManager {
             dynamic = result.dynamicSupplier
         }
 
-        // 是否存在「源值」：$t 产出了值，或该参数已有继承值。
-        // 只写 $c 而没有源值时两者都不成立（见下面的空值处理）。
+        // A source value exists if $t produced one or this parameter has an inherited value.
+        // Neither condition holds when only $c is specified without a source value (see the empty-value handling below).
         val hasSource = value != null || hadOrigin
 
         val rawValue = value ?: origin
@@ -398,10 +398,10 @@ object TemplateManager {
 
         val finalValue = value ?: ""
 
-        // 只写了 $c/$t 而没有源值、且转换结果为空时，**不要**注册这个参数。
-        // 否则会用空串顶掉模板里的 %{key?:default} 默认值（旧行为），
-        // 例如 `damage: {$c: {type: int}}` 会把 amount 变成空串、物品直接构建失败。
-        // 交给模板默认值处理才是符合直觉的结果；若 $c 配了 fallback，则结果非空，仍会正常注册。
+        // When only $c/$t is specified with no source value and the conversion result is empty, **do not** register this parameter.
+        // Otherwise, an empty string would override a template's %{key?:default} value (the old behavior).
+        // For example, `damage: {$c: {type: int}}` would make amount empty and cause item construction to fail.
+        // Let the template's default handle this case; if $c specifies a fallback, the result is non-empty and is registered normally.
         if (hasSource || finalValue.isNotEmpty()) {
             currentArgs[key] = substituteParamsInString(finalValue, currentArgs, emptyMap())
             rawValues[key] = finalValue
@@ -423,7 +423,7 @@ object TemplateManager {
         }
     }
 
-    // ==================== $t 变换器 ====================
+    // ==================== $t transformers ====================
 
     private data class TransformResult(
         val value: String,
@@ -575,9 +575,9 @@ object TemplateManager {
         val step = (config["step"] as? Number)?.toInt() ?: 1
         val stepInterval = (config["step_interval"] as? Number)?.toInt() ?: 1
 
-        // 加载期校验：step_interval <= 0 会在 next() 的取模处触发 ArithmeticException，
-        // step == 0 或方向与 from/to 相反会让计数器永远不动/溢出 —— 在这里拒绝并报告，
-        // 而不是等运行时炸掉
+        // Validate during loading: step_interval <= 0 would cause an ArithmeticException when next() computes the remainder.
+        // A zero step or a direction that conflicts with from/to would stall or overflow the counter.
+        // Reject and report these configurations here instead of failing at runtime.
         if (stepInterval <= 0) {
             warningL("Config_Load_Error_Parse", "\$t self_increase", "step_interval must be > 0, got $stepInterval")
             return TransformResult(from.toString())
@@ -599,7 +599,7 @@ object TemplateManager {
     }
 
     /**
-     * 自增计数器。每次调用 next() 返回当前值并步进。
+     * Incrementing counter. Each call to next() returns the current value, then advances the counter.
      */
     internal class SelfIncreaseCounter(
         from: Int,
@@ -655,7 +655,7 @@ object TemplateManager {
         val nullfallback = config["nullfallback"]?.toString()
         val unitfallback = config["unitfallback"]?.toString()
 
-        // 解析 shell 中的 %{...}
+        // Resolve %{...} inside the shell.
         val resolvedShell = substituteParamsInString(shell, resolveCtx, emptyMap())
 
         return try {
@@ -678,7 +678,7 @@ object TemplateManager {
     }
 
     /**
-     * 获取配置中的字符串值，支持单字符串和列表格式（合并为多行文本）。
+     * Reads a string value from the configuration. Supports a single string or a list (joined as multiline text).
      */
     private fun getFlexibleString(config: Map<String, Any?>, key: String): String? {
         val value = config[key] ?: return null
@@ -690,13 +690,13 @@ object TemplateManager {
     }
 
     /**
-     * 执行指定类型的脚本表达式。
-     * 注意：脚本执行需要运行时上下文，可能会静默失败。
+     * Executes a script expression of the specified type.
+     * Note: Script execution requires a runtime context and may fail silently.
      */
     private fun executeScript(shell: String, scriptType: String): Any? {
-        // 脚本执行需要 Bukkit 运行时上下文（player/sender），
-        // 在配置重载期间可能不可用。
-        // 这里尝试执行，失败时返回 null 由 caller 走 fallback。
+        // Script execution requires a Bukkit runtime context (player/sender),
+        // which may be unavailable during configuration reloads.
+        // Try to execute it here; on failure, return null so the caller can use its fallback.
         return try {
             when (scriptType) {
                 "kether" -> evalKether(shell)
@@ -712,7 +712,7 @@ object TemplateManager {
     }
 
     private fun evalKether(shell: String): Any? {
-        // KetherShell.eval 需要 sender 上下文，使用 console sender
+        // KetherShell.eval requires a sender context, so use the console sender.
         val sender = io.github.zzzyyylllty.sertraline.Sertraline.consoleSender
         return taboolib.module.kether.KetherShell.eval(
             shell,
@@ -723,22 +723,22 @@ object TemplateManager {
     }
 
     private fun evalStandardJs(shell: String): Any? {
-        // 复用每线程缓存的 JSR-223 引擎，避免每次调用都创建 ScriptEngineManager + engine
+        // Reuse the JSR-223 engine cached for this thread instead of creating a ScriptEngineManager and engine on every call.
         val engine = io.github.zzzyyylllty.sertraline.util.GraalJsUtil.nashornEngineHolder.get() ?: return null
-        // 使用独立 bindings，避免脚本顶层 var 污染后续 eval
+        // Use separate bindings so top-level script vars do not affect later eval calls.
         return engine.eval(shell, engine.createBindings())
     }
 
     private fun evalFluxon(shell: String): Any? {
         return io.github.zzzyyylllty.sertraline.function.fluxon.FluxonShell.invoke(shell, useCache = true) {
-            // 空变量集
+            // Empty variable set.
         }
     }
 
     private fun evalGraalJs(shell: String): Any? {
-        // 尝试使用 GraalJS (需要依赖)，失败时回退到标准 JS
+        // Try GraalJS (requires the dependency); fall back to standard JS if it fails.
         return try {
-            // evalToJsString 保持旧实现 Value.toString 的 JS 语义输出格式
+            // evalToJsString preserves the JavaScript-style output format of the previous Value.toString implementation.
             io.github.zzzyyylllty.sertraline.util.GraalJsUtil.evalToJsString(shell, emptyMap())
         } catch (e: Exception) {
             evalStandardJs(shell)
@@ -754,21 +754,21 @@ object TemplateManager {
         }
     }
 
-    // ==================== $c 类型转换 ====================
+    // ==================== $c type conversion ====================
 
     /**
-     * $c 类型转换器。
+     * $c type converter.
      *
-     * 完整格式：
+     * Full format:
      * ```yaml
      * $c:
      *   type: int
      *   round: floor   # cell / round / floor
      *   fallback: 1
-     *   case: uppercase  # 可选：uppercase / lowercase
+     *   case: uppercase  # Optional: uppercase / lowercase
      * ```
      *
-     * 简写格式：
+     * Shorthand format:
      * ```yaml
      * $c: double
      * ```
@@ -850,7 +850,7 @@ object TemplateManager {
         }
     }
 
-    // ==================== 参数替换 ====================
+    // ==================== Parameter substitution ====================
 
     private const val ESCAPE_LEFT = "\u0000L\u0000"
     private const val ESCAPE_RIGHT = "\u0000R\u0000"
@@ -879,10 +879,10 @@ object TemplateManager {
         arguments: Map<String, String>,
         dynamicValues: Map<String, () -> String>
     ): String {
-        // 快速路径
+        // Fast path.
         if (input.none { it == '%' || it == '\\' }) return input
 
-        // Step 1: 保护转义序列
+        // Step 1: Protect escape sequences.
         val result = StringBuilder(input.length + 16)
         var i = 0
         while (i < input.length) {
@@ -894,7 +894,7 @@ object TemplateManager {
             }
         }
 
-        // Step 2: 替换 %{param} 模式（支持动态值）
+        // Step 2: Substitute the %{param} pattern (supports dynamic values).
         var processed = PARAM_PATTERN.replace(result.toString()) { match ->
             val inner = match.groupValues[1]
             val separatorIdx = inner.indexOf("?:")
@@ -908,7 +908,7 @@ object TemplateManager {
             }
         }
 
-        // Step 3: 恢复转义字符
+        // Step 3: Restore escaped characters.
         processed = processed
             .replace(ESCAPE_LEFT, "{")
             .replace(ESCAPE_RIGHT, "}")
@@ -918,8 +918,8 @@ object TemplateManager {
     }
 
     /**
-     * 处理 %{...} 内部的内容。
-     * 支持 %{param} 和 %{param?:default} 两种格式。
+     * Processes the content inside %{...}.
+     * Supports both %{param} and %{param?:default} formats.
      */
     private fun processParam(inner: String, arguments: Map<String, String>): String {
         val separatorIdx = inner.indexOf("?:")
@@ -940,7 +940,7 @@ object TemplateManager {
         return "%{$inner}"
     }
 
-    // ==================== 工具函数 ====================
+    // ==================== Utility functions ====================
 
     @Suppress("UNCHECKED_CAST")
     private fun deepClone(value: Any?): Any? {

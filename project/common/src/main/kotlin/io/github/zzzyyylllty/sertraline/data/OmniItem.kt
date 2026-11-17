@@ -21,7 +21,7 @@ import taboolib.module.nms.NMSItemTag.Companion.asNMSCopy
 import taboolib.module.nms.NMSItemTag.Companion.asBukkitCopy
 import kotlin.math.roundToInt
 
-// 命名空间别名表统一由 SItemFactory.classify 维护，这里不再保留各自的副本
+// Namespace aliases are maintained centrally by SItemFactory.classify; do not keep a separate copy here.
 val componentHelper by lazy { if (VersionHelper.isOrAbove12005()) EmbianComponent.SafetyComponentSetter else null }
 
 data class OmniItem(

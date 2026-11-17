@@ -44,20 +44,20 @@ import taboolib.platform.util.buildItem
 
 
 fun itemSource(str: String,player: Player?): ItemStack {
-    // material 字段最多两段：`命名空间:标识`；多余段属于配置错误，不能静默丢弃
+    // The material field accepts at most two parts: `namespace:id`. Extra parts indicate a configuration error and must not be silently discarded.
     val split = str.split(":", limit = 2).toMutableList()
     val key = split.first()
     split.removeFirst()
-    // 与 OmniItem / 配方解析共用同一份命名空间别名表。
-    // 注意 material 字段的语法与 AbstractSItem 引用语法不同：裸名称（"STONE"）表示原版材质。
+    // Share the namespace alias table used by OmniItem and recipe parsing.
+    // Note that the material field syntax differs from AbstractSItem references: a bare name ("STONE") means a vanilla material.
     val kind = if (str.contains(":")) SItemFactory.classify(key) else SItemFactory.SourceKind.MINECRAFT
     val item = try {
         when (kind) {
             SItemFactory.SourceKind.MINECRAFT -> XMaterial.valueOf(
                 (if (split.isNotEmpty()) split[0] else if (str != "null") str else "GRASS_BLOCK").toUpperCase()
             ).parseItem()
-            // material 字段不承载 Sertraline 物品引用：itemBridge 已用 removeById("sertraline") 摘掉
-            // 该 provider，走外部分支必然返回 null 并静默变成草方块。这里显式取模板材质。
+            // The material field does not carry Sertraline item references: itemBridge removed this provider with removeById("sertraline").
+            // The external branch would always return null and silently turn the item into a grass block, so read the template material explicitly.
             SItemFactory.SourceKind.SERTRALINE -> split.firstOrNull()
                 ?.let { itemMap[it]?.getMaterial() }
                 ?.takeIf { it != Material.AIR }
@@ -87,10 +87,10 @@ fun itemSource(str: String,player: Player?): ItemStack {
 }
 
 /**
- * 从 `itemdef` 段落里取基础材质。
+ * Reads the base material from the `itemdef` section.
  *
- * itemdef 不属于任何模块的 data（只有 itemdefAdapter 在构建阶段读取 config），
- * 因此这里也必须从 [ModernSItem.config] 读原始 YAML，而不是 getDeepData。
+ * itemdef is not part of any module's data (only itemdefAdapter reads config during construction),
+ * so read the raw YAML from [ModernSItem.config] here instead of using getDeepData.
  * */
 private fun itemdefMaterial(sItem: AbstractSItem): Any? =
     (sItem.config["itemdef"] as? Map<*, *>)?.get("material")
@@ -202,7 +202,7 @@ fun sertralineItemBuilderInternal(template: String, player: Player?, source: Ite
     // `pTemplate` is already a detached deep copy, so it is safe to mutate and it keeps the
     // overrides — which is also what [applyAlterationsToTemplate] needs to write into.
     //
-    // === Alteration: 应用「模板修改 + 实例修改(NBT sertraline_alteration)」到物品数据，为宝石系统等修改数据的功能提供基底 ===
+    // === Alteration: apply template and instance (NBT sertraline_alteration) changes to item data, providing a base for features such as gems ===
     // Folded before serialization so `{var:...}` placeholders render this build's values and not the
     // ones the incoming stack still carries.
     val appliedAlterations = applyAlterationsToTemplate(pTemplate, rebuild)
@@ -268,7 +268,7 @@ fun sertralineItemBuilderTemporary(template: ModernSItem, player: Player?, sourc
     }
     // See sertralineItemBuilderInternal for why the build must start from `pTemplate` and why the
     // alterations are folded before serialization.
-    // === Alteration: 与 sertralineItemBuilderInternal 一致，应用修改并写回 NBT ===
+    // === Alteration: match sertralineItemBuilderInternal by applying changes and writing them back to NBT ===
     val appliedAlterations = applyAlterationsToTemplate(pTemplate, rebuild)
     val processedTemplate = itemSerializer(pTemplate, renderContextStack(rebuild, pTemplate), player)
     val itemSource = source ?: resolveItemSource(processedTemplate, player)

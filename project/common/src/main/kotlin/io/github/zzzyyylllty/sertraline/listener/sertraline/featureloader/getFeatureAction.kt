@@ -92,7 +92,7 @@ fun getFeatureAction(e: FeatureLoadEvent) {
         actions[it.key as String] = list
     }
 
-    // context 模式写候�?itemCache（发布时合并回全局），�?context 直接写全局�?
+    // In context mode, write to the candidate itemCache (merged into the global cache when published); otherwise write directly to the global table.
     val cacheSink: MutableMap<String, Map<String, Any?>> =
         e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
     val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()

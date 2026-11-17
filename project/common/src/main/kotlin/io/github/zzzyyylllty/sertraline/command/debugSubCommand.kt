@@ -334,9 +334,9 @@ object DebugCommand {
     }
 
     /**
-     * 手动触发物品更新扫描：`/sertralinedebug update` 按 revision 检查，
-     * `/sertralinedebug update true` 无视 revision 强制重建一遍（用于 tracker 丢失、
-     * 或引用的 tier/type/level/lore-format 文件变更这类不会改变物品哈希的情况）。
+     * Manually triggers an item update scan: `/sertralinedebug update` checks revisions,
+     * while `/sertralinedebug update true` ignores revisions and forces a rebuild (for example, after tracker data is lost
+     * or a referenced tier/type/level/lore-format file changes without affecting the item hash).
      */
     @CommandBody
     val update = subCommand {
@@ -358,9 +358,9 @@ object DebugCommand {
     }
 
     /**
-     * 重置自动追踪：删除 revision/auto-track.json 并清空期望版本表。
-     * 下一次 reload 会重新建立追踪（现有物品被当作新物品，从 1 开始），
-     * 版本号高于 1 的物品会在刷新时按 `!=` 判定重建一次。
+     * Resets automatic tracking by deleting revision/auto-track.json and clearing the expected revision table.
+     * Tracking is rebuilt on the next reload (existing items are treated as new and start at 1).
+     * Items with a revision greater than 1 are rebuilt once during refresh because of the `!=` check.
      */
     @CommandBody
     val resetRevision = subCommand {
@@ -370,7 +370,7 @@ object DebugCommand {
         }
     }
 
-    /** 物品更新系统关闭时给出明确反馈，而不是静默什么都不做。 */
+    /** Provides clear feedback when the item update system is disabled instead of silently doing nothing. */
     private fun itemUpdateUsable(sender: CommandSender): Boolean {
         if (SertralineSettings.itemUpdateEnabled) return true
         sender.sendStringAsComponent("<red>item-update.enabled is false - the item update system is disabled.</red>")
@@ -378,8 +378,8 @@ object DebugCommand {
     }
 
     /**
-     * 堆叠诊断：把手持物品与「现场重新生成的同款物品」以及「副手物品」对比，
-     * 逐键列出不同的 NBT 路径与组件，直接回答「为什么这两件物品不能堆叠」。
+     * Stack diagnostics: compares the held item with a freshly generated copy and the offhand item,
+     * listing differing NBT paths and components by key to show why two items cannot stack.
      */
     @CommandBody
     val stackDiff = subCommand {
@@ -442,7 +442,7 @@ object DebugCommand {
         if (hidden > 0) sender.sendStringAsComponent("  <dark_gray>… 还有 $hidden 项未显示</dark_gray>")
     }
 
-    /** 把物品的 NBT 展开成 `路径 -> 值`，便于逐键对比（含 sertraline_data 这类嵌套 compound）。 */
+    /** Flattens an item's NBT into `path -> value` entries for comparison by key, including nested compounds such as sertraline_data. */
     private fun dumpTagPaths(item: ItemStack): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         val tag = runCatching { item.getItemTag(true) }.getOrNull() ?: return out
@@ -461,7 +461,7 @@ object DebugCommand {
         }
     }
 
-    /** 组件的 `名称 -> JSON`（用 JSON 对比，避开 NMS 对象 toString 的噪声）。 */
+    /** Maps component names to JSON for comparison, avoiding noise from NMS object toString output. */
     private fun dumpComponents(item: ItemStack): Map<String, String> {
         val out = LinkedHashMap<String, String>()
         val components = runCatching { item.getComponentsFilteredNMS() }.getOrNull() ?: return out
@@ -473,7 +473,7 @@ object DebugCommand {
         return out
     }
 
-    /** 发给玩家的字符串要转义 MiniMessage 的尖括号，否则物品 lore 里的标签会被解析掉。 */
+    /** Escape MiniMessage angle brackets in strings sent to players, or tags in item lore may be parsed. */
     private fun mmSafe(value: String?): String {
         val v = value ?: return "null"
         val trimmed = if (v.length > 200) v.take(200) + "…" else v

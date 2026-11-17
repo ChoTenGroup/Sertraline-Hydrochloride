@@ -29,13 +29,13 @@ class PublicManager {
     }
 
     fun createTemporary(id: String, item: AbstractSItem) {
-        // 两步插入都要原子判定，且回滚时只撤掉「本次调用自己插入的」那一条
+        // Both insertions must be checked atomically, and rollback must remove only the entry inserted by this call.
         if (temporaryCache.putIfAbsent(id, item) != null) {
             throw IllegalStateException("Item $id already exists in public manager")
         }
         if (Sertraline.itemMap.putIfAbsent(id, item) != null) {
-            // 注册表里已有同 id 的条目（可能是持久物品），回滚时不能用 remove(id)，
-            // 否则会把那条与本次调用无关的条目删掉
+            // The registry may already contain an entry with this ID (possibly a persistent item), so rollback must not call remove(id),
+            // or it could delete an entry unrelated to this call.
             temporaryCache.remove(id, item)
             throw IllegalStateException("Item $id already exists in public manager")
         }
@@ -50,8 +50,8 @@ class PublicManager {
                 Sertraline.itemMap.remove(id) != null
             }
             SubManagerType.TEMPORARY -> {
-                // 只有临时表里确实存在该条目时才联动清理注册表；
-                // 用 remove(key, value) 保证只删同一个实例，不会误删持久物品
+                // Update the registry only when this entry exists in the temporary table.
+                // remove(key, value) ensures that only the same instance is deleted, protecting persistent items.
                 val removed = temporaryCache.remove(id) ?: return false
                 Sertraline.itemMap.remove(id, removed)
                 true

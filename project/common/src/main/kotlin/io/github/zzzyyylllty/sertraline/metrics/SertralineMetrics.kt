@@ -14,25 +14,25 @@ import org.bukkit.Bukkit
 import taboolib.platform.BukkitPlugin
 
 /**
- * FastStats 集成（bStats 风格的匿名使用统计 + 错误追踪）。
+ * FastStats integration (bStats-style anonymous usage metrics and error tracking).
  * FastStats integration (bStats-like anonymous usage metrics and error tracking).
  *
- * 生命周期：插件 ENABLE 时 [start] 一次，DISABLE 时 [shutdown] 一次；两者都是幂等的。
+ * Lifecycle: call [start] once during plugin ENABLE and [shutdown] once during DISABLE; both are idempotent.
  * Lifecycle: [start] once at plugin ENABLE, [shutdown] once at DISABLE; both are idempotent.
  *
- * ## 平台约束 / Platform constraints
- * paper/spigot 使用 FastStats 默认构件（Java 17 字节码），legacy12（MC 1.12.2 / Java 8）使用官方
- * 的 Java 8 回退构件 `dev.faststats.metrics.j8`（包名相同、API 相同、major 52，内部同样对
- * Paper/Folia 专有调用做了 NoSuchMethodError 兜底），两者均由 build.gradle.kts 打进 jar 并重定位。
+ * ## Platform constraints
+ * Paper/Spigot use the default FastStats artifact (Java 17 bytecode); legacy12 (MC 1.12.2 / Java 8) uses the official
+ * Java 8 fallback artifact `dev.faststats.metrics.j8` (same package and API, major version 52, with the same NoSuchMethodError guards
+ * for Paper/Folia-only calls). Both are bundled and relocated by build.gradle.kts.
  * paper/spigot use the default FastStats artifact (Java 17 bytecode); legacy12 (MC 1.12.2 /
  * Java 8) uses the official Java 8 backport `dev.faststats.metrics.j8` (same packages, same API,
  * major 52, with the same NoSuchMethodError fallbacks for Paper/Folia-only calls). Both are
  * bundled and relocated by build.gradle.kts.
  *
- * ## 实现约束 / Implementation constraints
- * 本 object 的任何**成员字段类型**都不得是 FastStats 类型，否则 legacy12 上类初始化即失败
- * （参考 Sertraline.kt 中对 Caffeine 的同类注释）。FastStats 只在函数体内被引用，
- * 字节码中的符号引用按 JVM 语义在执行到该指令时才解析，因此可以安全地被 try/catch 包住。
+ * ## Implementation constraints
+ * No **member field type** in this object may be a FastStats type, or class initialization will fail on legacy12
+ * (see the similar Caffeine note in Sertraline.kt). FastStats is referenced only inside function bodies.
+ * Under JVM semantics, symbolic references in bytecode are resolved only when execution reaches the instruction, so they can safely be wrapped in try/catch.
  * No member field of this object may be typed with a FastStats type, otherwise class
  * initialization fails on legacy12 (see the equivalent Caffeine note in Sertraline.kt).
  * FastStats is only referenced inside function bodies; symbolic references resolve lazily
@@ -40,23 +40,23 @@ import taboolib.platform.BukkitPlugin
  */
 object SertralineMetrics {
 
-    /** FastStats context，故意用 [Any] 持有以避免 legacy12 的类初始化问题。 */
+    /** FastStats context, intentionally stored as [Any] to avoid class initialization issues on legacy12. */
     @Volatile
     private var context: Any? = null
 
-    /** 全局错误追踪器，同样用 [Any] 持有。 */
+    /** Global error tracker, also stored as [Any]. */
     @Volatile
     private var errorTracker: Any? = null
 
     @Volatile
     private var active = false
 
-    /** 统计是否已成功启动。 */
+    /** Whether metrics started successfully. */
     val isActive: Boolean get() = active
 
     /**
-     * 启动统计。token 为空、配置未启用或平台不支持时安全跳过；
-     * 任何失败只记一条警告，绝不影响插件启动。
+     * Starts metrics. Safely skips when the token is empty, metrics are disabled, or the platform is unsupported.
+     * Any failure logs one warning and never affects plugin startup.
      * Starts metrics submission; silently no-ops without a token, when disabled, or on
      * unsupported platforms. Any failure only logs a warning and never breaks startup.
      */
@@ -91,7 +91,7 @@ object SertralineMetrics {
             active = true
             infoL("Metrics_Enabled")
         } catch (t: Throwable) {
-            // 兜底：SDK 缺失（构型未打包）或 token 非法时都走这里，绝不让统计影响插件启动。
+            // Fallback for a missing SDK (not bundled for this platform) or an invalid token; metrics must never affect plugin startup.
             // Safety net: a missing SDK or an invalid token must never break plugin startup.
             if (t is NoClassDefFoundError || t is ClassNotFoundException) {
                 devLog("FastStats SDK is not bundled on this platform; metrics and error tracking stay disabled.")
@@ -105,7 +105,7 @@ object SertralineMetrics {
     }
 
     /**
-     * 停止统计（提交未决数据、注销调度）。未启动时安全返回。
+     * Stops metrics (submits pending data and unregisters scheduled tasks). Safely returns if not started.
      * Stops submission and cancels the SDK's scheduled tasks; safe to call when not started.
      */
     fun shutdown() {
@@ -120,7 +120,7 @@ object SertralineMetrics {
     }
 
     /**
-     * 主动上报一个异常（错误追踪未启用时为空操作）。
+     * Explicitly reports an exception (no-op when error tracking is disabled).
      * Reports an error explicitly through FastStats error tracking; no-op when it is disabled.
      */
     fun reportError(throwable: Throwable) {
@@ -128,22 +128,22 @@ object SertralineMetrics {
         try {
             tracker.trackError(throwable)
         } catch (_: Throwable) {
-            // 错误追踪本身绝不能反过来打断业务逻辑。
+            // Error tracking itself must never interrupt business logic.
             // Error tracking must never break the caller's flow.
         }
     }
 }
 
 /**
- * 注册 Sertraline 的自定义指标。
- * 每个 source id 都必须与 FastStats 项目里配置的数据源同名（小写字母/数字/下划线），
- * 否则该值会被服务端忽略。
+ * Registers Sertraline custom metrics.
+ * Each source ID must match the name of a data source configured in the FastStats project (lowercase letters, digits, and underscores),
+ * or the server will ignore the value.
  *
  * Registers Sertraline's custom metrics. Every source id must match a data source
  * configured in the FastStats project (lowercase letters, digits and underscores),
  * otherwise the value is ignored by the server.
  *
- * supplier 由 SDK 在提交时调用（异步线程），因此这里只做轻量、无副作用的读取。
+ * The SDK calls the supplier during submission on an asynchronous thread, so it should perform only lightweight, side-effect-free reads.
  * Suppliers run on the SDK's submission thread, so they only perform cheap, side-effect
  * free reads.
  */
@@ -151,7 +151,7 @@ private fun applyCustomMetrics(factory: Metrics.Factory): Metrics.Factory {
     if (!SertralineSettings.metricsCustomMetrics) return factory
 
     return factory
-        // ==================== 配置规模 / Content scale ====================
+        // ==================== Content scale ====================
         .addMetric(Metric.number("loaded_items") { Sertraline.itemMap.size })
         .addMetric(Metric.number("loaded_mappings") { Sertraline.mappings.size })
         .addMetric(Metric.number("loaded_lore_formats") { Sertraline.loreFormats.size })
@@ -161,7 +161,7 @@ private fun applyCustomMetrics(factory: Metrics.Factory): Metrics.Factory {
         .addMetric(Metric.number("crafting_stations") { Sertraline.craftingStations.size })
         .addMetric(Metric.number("config_version") { SertralineSettings.configVersion })
 
-        // ==================== 运行形态 / Deployment shape ====================
+        // ==================== Deployment shape ====================
         .addMetric(Metric.string("edition") { if (VersionHelper.isSertralinePremium) "premium" else "free" })
         .addMetric(Metric.string("database_type") { if (SertralineSettings.databaseEnable) "mysql" else "sqlite" })
         .addMetric(Metric.stringArray("installed_hooks") { installedHooks() })
@@ -169,8 +169,8 @@ private fun applyCustomMetrics(factory: Metrics.Factory): Metrics.Factory {
 }
 
 /**
- * Sertraline 会对接的可选前置插件（与 plugin/build.gradle.kts 的 dependencies { name(...) }、
- * 也就是 plugin.yml 的 softdepend 保持一致；新增前置时同步这里即可）。
+ * Optional dependency plugins integrated with Sertraline. Keep this list in sync with dependencies { name(...) }
+ * in plugin/build.gradle.kts and plugin.yml's softdepend; update it when adding a dependency.
  * Optional plugins Sertraline integrates with, mirroring the softdepend list declared in
  * plugin/build.gradle.kts (plugin.yml); add new integrations here as well.
  */
@@ -181,7 +181,7 @@ private val TRACKED_HOOKS = listOf(
 )
 
 /**
- * 已实际安装的可选前置插件。
+ * Optional dependency plugins that are actually installed.
  * Optional plugins that are actually installed on this server.
  */
 private fun installedHooks(): Array<String> {
@@ -195,7 +195,7 @@ private fun installedHooks(): Array<String> {
 }
 
 /**
- * 启用的脚本引擎（对应 config.yml 的 preload.script.*）。
+ * Enabled script engines (corresponding to preload.script.* in config.yml).
  * Enabled script engines, mirroring the preload.script.* switches in config.yml.
  */
 private fun enabledScriptEngines(): Array<String> {

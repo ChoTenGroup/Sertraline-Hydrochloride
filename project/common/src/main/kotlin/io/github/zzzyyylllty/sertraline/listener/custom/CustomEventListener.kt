@@ -127,7 +127,7 @@ object CustomEventListener {
         val root = CustomEventsConfig.config
         val plugin = BukkitPlugin.getInstance()
 
-        // ---- prepare：全部解析，任何一条失败不影响现有注册 ----
+        // ---- Prepare: parse everything; a failure does not affect existing registrations. ----
         val parsed = mutableListOf<Registration>()
         for (key in root.getKeys(false)) {
             val sub = root.getConfigurationSection(key) ?: run {
@@ -141,7 +141,7 @@ object CustomEventListener {
             }
         }
 
-        // ---- commit：注销旧 + 注册新（主线程，dummyListener 整体注销） ----
+        // ---- Commit: unregister old and register new (main thread; unregister dummyListener as a whole). ----
         unregisterAll()
         for (reg in parsed) {
             try {

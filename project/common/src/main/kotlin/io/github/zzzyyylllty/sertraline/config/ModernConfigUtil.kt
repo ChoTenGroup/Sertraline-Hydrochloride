@@ -83,7 +83,7 @@ fun getFeatureDefault(input: Map<*, *>?, feature: String, context: LoadContext? 
         return null
     }
 
-    // context 模式：优先 candidate，未命中回读 live（增量加载时未变更映射仍在 live 表）
+    // In context mode, check candidate first and fall back to live (unchanged mappings remain in the live table during incremental loading).
     val mapping: List<String>? = if (context != null) {
         context.mappings[feature] ?: Sertraline.mappings[feature]
     } else {

@@ -8,16 +8,16 @@ import io.github.zzzyyylllty.sertraline.data.Tier
 import io.github.zzzyyylllty.sertraline.data.Type
 
 /**
- * 单轮 reload 的候选 registry 构建上下文。
+ * Candidate registry build context for a single reload.
  *
- * loader / ItemLoadEvent / FeatureLoadEvent 在构建阶段读写本 context 的局部 map，
- * 而不是直接写 [io.github.zzzyyylllty.sertraline.Sertraline] 的 live registry；
- * 全部构建成功后由 reload 流程一次性发布（copy 到 live map），失败则丢弃 context，
- * live registry 保持上一轮的完整状态。
+ * During the build phase, loaders, ItemLoadEvent, and FeatureLoadEvent read and write this context's local maps
+ * instead of writing directly to the live registry in [io.github.zzzyyylllty.sertraline.Sertraline].
+ * After the entire build succeeds, the reload process publishes everything at once by copying it to the live maps.
+ * If the build fails, the context is discarded and the live registry retains its complete previous state.
  *
- * live fallback：[itemMap]/[mappings]/[tiers] 等的 getter 在 candidate map 中无该键时
- * 回读 live registry —— 用于增量加载（未变更文件的条目仍留在 live map 中，构建
- * 阶段无需重新解析）。
+ * Live fallback: getters such as [itemMap], [mappings], and [tiers] read from the live registry when a key
+ * is absent from the candidate map. This supports incremental loading: entries from unchanged files remain
+ * in the live maps and do not need to be parsed again during the build.
  */
 class LoadContext {
 
@@ -25,7 +25,7 @@ class LoadContext {
     var attributeOperations: Map<String, io.github.zzzyyylllty.sertraline.attribute.data.AttributeExpression> = emptyMap()
     var attributes: io.github.zzzyyylllty.sertraline.attribute.AttributeRegistry.Snapshot? = null
 
-    // ---- 局部新增/覆盖条目（candidate） ----
+    // ---- Locally added or overridden entries (candidate) ----
 
     val items = LinkedHashMap<String, AbstractSItem>()
     val mappings = LinkedHashMap<String, MutableList<String>>()
@@ -36,22 +36,22 @@ class LoadContext {
     val craftingStations = LinkedHashMap<String, CraftingStation>()
     val templates = LinkedHashMap<String, Map<String, Any?>>()
 
-    /** 本轮构建期间写入的 itemCache 条目（发布时合并回全局 itemCache）。 */
+    /** itemCache entries written during this build (merged into the global itemCache when published). */
     val itemCache = LinkedHashMap<String, Map<String, Any?>>()
 
-    /** 本轮解析到的 item id → 来源文件绝对路径（发布时才写入 live 索引）。 */
+    /** Item IDs parsed during this build -> absolute source file paths (written to the live index only when published). */
     val itemSourceFiles: LinkedHashMap<String, String> = LinkedHashMap()
 
-    /** 本轮增量 item 加载实际解析过的文件绝对路径（增量发布合并判定用）。 */
+    /** Absolute paths of files actually parsed during incremental item loading (used to decide what to merge when publishing). */
     val parsedItemFiles = LinkedHashSet<String>()
 
-    /** 本轮在工作区看到过的全部 item 文件（解析过或跳过）；不在其中 = 文件已被删除。 */
+    /** All item files seen in the workspace during this build, whether parsed or skipped; files absent from this set were deleted. */
     val seenItemFiles = LinkedHashSet<String>()
 
-    /** 本轮 item 加载是否走了增量模式（决定发布前是否合并 live 条目）。 */
+    /** Whether item loading used incremental mode in this build (determines whether live entries are merged before publishing). */
     var itemsLoadedIncrementally = false
 
-    // ---- live 回读入口 ----
+    // ---- Live-registry fallback accessors ----
 
     val liveItems: Map<String, AbstractSItem> get() = io.github.zzzyyylllty.sertraline.Sertraline.itemMap
     val liveMappings: Map<String, List<String>?> get() = io.github.zzzyyylllty.sertraline.Sertraline.mappings
@@ -63,11 +63,11 @@ class LoadContext {
     val liveTemplates: Map<String, Map<String, Any?>> get() = TemplateManager.getAllTemplates()
 
     /**
-     * 把候选内容发布到 live registry（整体替换语义）。
+     * Publishes candidate contents to the live registry, replacing it as a whole.
      *
-     * 发布在 ReloadCoordinator 串行 gate 内执行，期间不会有第二轮 reload 并发进入；
-     * loreFormats 保持既有的「引用整体替换」语义：packet 读侧持旧引用，
-     * 直到下一次读取才看到新 map，无逐项填充的中间态。
+     * Publishing runs inside ReloadCoordinator's serial gate, so another reload cannot enter concurrently.
+     * loreFormats retains its existing whole-reference replacement semantics: packet readers keep the old reference
+     * until their next read, and never observe a partially populated map.
      */
     fun publishToLive() {
         val s = io.github.zzzyyylllty.sertraline.Sertraline
@@ -84,8 +84,8 @@ class LoadContext {
         val newLevels = java.util.concurrent.ConcurrentHashMap(levels)
         val newStations = java.util.concurrent.ConcurrentHashMap(craftingStations)
         val newLoreFormats = java.util.concurrent.ConcurrentHashMap<String, AbstractLoreFormat>(loreFormats)
-        // 本轮构建写入的 itemCache 条目替换全局缓存（原子引用替换，与上面各字段一致）
-        // 通过工厂构造，保证替换后仍是有界的 Caffeine 缓存（Caffeine 在 LifeCycle.INIT 注入，此处已在其后）
+        // Atomically replace the global cache with the itemCache entries written during this build, like the fields above.
+        // Create it through the factory so it remains a bounded Caffeine cache (Caffeine is injected at LifeCycle.INIT, before this point).
         val newItemCache = s.newItemCacheMap()
         newItemCache.putAll(itemCache)
 
@@ -98,11 +98,11 @@ class LoadContext {
         s.loreFormats = newLoreFormats
         TemplateManager.publishTemplates(templates)
         s.itemCache = newItemCache
-        // 来源索引与发布后的 itemMap 对齐（清理已删除条目的陈旧记录），
-        // 并把本轮解析出的路径一并写入：候选构建阶段不再碰 live 索引。
+        // Align the source index with the published itemMap, removing stale records for deleted entries,
+        // and add paths parsed during this build. Candidate building no longer touches the live index.
         s.itemSourceFile.putAll(itemSourceFiles)
         s.itemSourceFile.keys.retainAll(items.keys)
-        // 最后发布 itemMap：读到新物品的读侧一定已经看到与之配套的所有辅助表
+        // Publish itemMap last so readers that see new items have already seen all related auxiliary maps.
         s.itemMap = java.util.concurrent.ConcurrentHashMap(items)
     }
 }

@@ -27,7 +27,7 @@ fun getFeatureLevel(e: FeatureLoadEvent) {
         }
     }
 
-    // Find the corresponding level (context 模式优先候选表，未命中回读 live)
+    // Find the corresponding level (in context mode, check the candidate table first and fall back to live).
     val level = e.context?.let { it.levels[levelId] ?: it.liveLevels[levelId] } ?: levels[levelId]
     if (level == null) {
         warningS("Level '$levelId' not found for item ${e.sItemKey}")
@@ -39,7 +39,7 @@ fun getFeatureLevel(e: FeatureLoadEvent) {
     // Set the result to the level ID (string)
     e.result = levelId
 
-    // Also store the level reference in itemCache（context 模式写候选，发布时合并）
+    // Also store the level reference in itemCache (in context mode, write to the candidate and merge on publish).
     val cacheSink: MutableMap<String, Map<String, Any?>> =
         e.context?.itemCache ?: io.github.zzzyyylllty.sertraline.Sertraline.itemCache
     val cache = e.sItemKey?.let { cacheSink[it] }?.toMutableMap() ?: mutableMapOf()

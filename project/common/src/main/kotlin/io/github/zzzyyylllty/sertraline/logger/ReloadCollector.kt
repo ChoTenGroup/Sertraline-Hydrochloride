@@ -6,10 +6,10 @@ import org.bukkit.command.CommandSender
 import taboolib.module.lang.asLangText
 
 /**
- * reload 报告收集入口（兼容保留）。
+ * Reload report collection entry point (retained for compatibility).
  *
- * 实际数据归属当轮 [ReloadContext]：由 [ReloadCoordinator.tryBegin] 绑定、`end()` 解绑。
- * 未绑定 context 时调用是 no-op —— 无主日志（如启动期 warning）不应被计入任何一轮报告。
+ * The current [ReloadContext] owns the actual data; [ReloadCoordinator.tryBegin] binds it and `end()` unbinds it.
+ * Calls are no-ops when no context is bound, so unowned logs (such as startup warnings) are not counted in any reload report.
  */
 object ReloadCollector {
 
@@ -70,8 +70,7 @@ object ReloadCollector {
     }
 
     /**
-     * 输出本轮 summary。每轮 context 只打印一次（幂等）；
-     * 未绑定 context 时为 no-op。
+     * Prints the current reload's summary once per context (idempotent); does nothing when no context is bound.
      */
     fun printSummary(sender: CommandSender? = null) {
         val context = current ?: return

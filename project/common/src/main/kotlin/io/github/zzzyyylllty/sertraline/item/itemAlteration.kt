@@ -13,14 +13,14 @@ import taboolib.module.nms.ItemTag
 import taboolib.module.nms.getItemTag
 
 /**
- * 数据修改（Alteration）系统 —— 宝石系统等「在构建时修改物品数据」功能的基底。
+ * Data alteration system, providing a foundation for features such as gems that modify item data during construction.
  *
- * 数据来源有两类：
- * 1. 模板定义：物品配置中的 `sertraline:alteration` 节点（每次构建都会应用）
- * 2. 实例持久化：物品 NBT 中的 [ALTERATION_TAG] 复合节点（重建时回注，
- *    例如镶嵌宝石后写入的修改会随 rebuild 一直保留）
+ * Data comes from two sources:
+ * 1. Template definition: the `sertraline:alteration` node in the item configuration (applied on every build).
+ * 2. Instance persistence: the [ALTERATION_TAG] compound in the item's NBT (restored during rebuild;
+ *    for example, changes written when socketing a gem persist across rebuilds).
  *
- * NBT 结构：
+ * NBT structure:
  * ```yaml
  * sertraline_alteration:
  *   ALTERATION_NAME:
@@ -30,28 +30,28 @@ import taboolib.module.nms.getItemTag
  * ```
  */
 
-/** NBT 中存放实例修改的节点名 */
+/** Name of the NBT node that stores instance alterations. */
 const val ALTERATION_TAG = "sertraline_alteration"
 
-/** 模板配置中存放修改定义的节点（data 命名空间） */
+/** Node in the template configuration (data namespace) that stores alteration definitions. */
 const val ALTERATION_DATA_KEY = "sertraline:alteration"
 
 /**
- * 「NBT 持久化目标」前缀：key 以这些前缀开头的修改，效果会直接折叠进物品
- * 自身的持久化 NBT（如 vars 最终由 sertralineAdapter 写入 `sertraline_data`），
- * 因此**不可撤回**——之后即使移除记录，效果仍留在物品上；记录本身保留在
- * [ALTERATION_TAG] 中并打上 `persisted: true` 标记，仅供追溯、不再重放。
+ * Prefixes for "NBT-persistent targets": alterations whose keys begin with these prefixes are folded directly into
+ * the item's persistent NBT (for example, vars are ultimately written to `sertraline_data` by sertralineAdapter).
+ * They are therefore **irreversible**: removing the record later does not remove the effect from the item.
+ * The record remains in [ALTERATION_TAG] with `persisted: true` for tracing and is not replayed.
  */
 val PERSISTENT_ALTERATION_PREFIXES = listOf("sertraline:vars")
 
-/** 该修改是否指向 NBT 持久化目标（永久生效、不可撤回） */
+/** Whether this alteration targets persistent NBT (permanent and irreversible). */
 fun SDataAlteration.isPersistentTarget(): Boolean =
     PERSISTENT_ALTERATION_PREFIXES.any { key == it || key.startsWith("$it.") || key.startsWith("$it:") }
 
 /**
- * 从配置内容解析修改列表。支持两种格式：
+ * Parses an alteration list from configuration. Supports two formats:
  *
- * Map 形式（key 即修改名称）：
+ * Map format (the key is the alteration name):
  * ```yaml
  * sertraline:alteration:
  *   gem_ruby_3:
@@ -60,7 +60,7 @@ fun SDataAlteration.isPersistentTarget(): Boolean =
  *     value: 15
  * ```
  *
- * List 形式（名称写在 name 字段）：
+ * List format (the name is specified in the name field):
  * ```yaml
  * sertraline:alteration:
  *   - name: gem_ruby_3
@@ -85,8 +85,8 @@ fun parseAlterations(source: Any?): List<SDataAlteration> {
 }
 
 /**
- * 解析单条修改定义。除通用的 key / operation / value 外，
- * 还支持便捷字段：`map-key`（MAP_SET / MAP_REMOVE）、`index`（LIST_REMOVE）。
+ * Parses a single alteration definition. In addition to the common key / operation / value fields,
+ * supports convenience fields: `map-key` (MAP_SET / MAP_REMOVE) and `index` (LIST_REMOVE).
  */
 fun parseAlterationEntry(name: String, def: Any?): SDataAlteration? {
     if (def !is Map<*, *>) return null
@@ -99,7 +99,7 @@ fun parseAlterationEntry(name: String, def: Any?): SDataAlteration? {
         }
         AlterationOperation.MAP_REMOVE -> def["map-key"]?.toString() ?: return null
         AlterationOperation.LIST_REMOVE -> {
-            // applyTo 要求 LIST_REMOVE 的 value 为 Int 下标
+            // applyTo expects value to be an Int index for LIST_REMOVE.
             ((def["index"] ?: def["value"]) as? Number)?.toInt() ?: return null
         }
         else -> def["value"]
@@ -113,8 +113,8 @@ private fun parseOperation(raw: Any?): AlterationOperation {
 }
 
 /**
- * 从 NBT 读回的实例修改记录： alteration 本体 + 是否已折叠进持久化 NBT。
- * [persisted] 为 true 的条目仅供追溯，构建时不再重放（防止 ADD 等操作无限累加）。
+ * Instance alteration record restored from NBT: the alteration itself and whether it has been folded into persistent NBT.
+ * Entries with [persisted] set to true are retained for tracing and not replayed during construction (preventing operations such as ADD from accumulating indefinitely).
  */
 data class RecordedAlteration(
     val alteration: SDataAlteration,
@@ -134,7 +134,7 @@ data class RecordedAlteration(
     val previousParentRoot: Boolean = false,
 )
 
-/** 读取物品 NBT 中持久化的实例修改记录（[ALTERATION_TAG]，含 persisted 标记） */
+/** Reads persisted instance alteration records from the item's NBT ([ALTERATION_TAG], including the persisted marker). */
 fun readAlterationRecordsFromNBT(itemStack: ItemStack): List<RecordedAlteration> {
     val compound = itemStack.getItemTag(true)[ALTERATION_TAG]?.asCompound() ?: return emptyList()
     return compound.entries.mapNotNull { (nbtKey, data) ->
@@ -146,7 +146,7 @@ fun readAlterationRecordsFromNBT(itemStack: ItemStack): List<RecordedAlteration>
             // (see alterationNbtKey), so it must not be used as the name. Fall back to it for
             // records written before the name field existed.
             val name = map["name"]?.toString() ?: nbtKey
-            // Boolean 写入 NBT 会被转成 byte(0/1)，读回时兼容两种表示
+            // Booleans are converted to bytes (0/1) when written to NBT; accept both representations when reading them back.
             val persisted = when (val p = map["persisted"]) {
                 is Number -> p.toInt() != 0
                 is String -> p.equals("true", ignoreCase = true)
@@ -214,11 +214,11 @@ private fun alterationNbtKey(name: String): String {
 }
 
 
-/** 读取物品 NBT 中的实例修改（忽略 persisted 标记，兼容旧用法） */
+/** Reads instance alterations from the item's NBT, ignoring the persisted marker for backward compatibility. */
 fun readAlterationsFromNBT(itemStack: ItemStack): List<SDataAlteration> =
     readAlterationRecordsFromNBT(itemStack).map { it.alteration }
 
-/** 把修改记录写入 ItemTag（按名称覆盖，不触碰其他节点；空列表则移除整个节点） */
+/** Writes alteration records to ItemTag, replacing entries by name without touching other nodes; removes the entire node for an empty list. */
 fun writeAlterationRecordsToTag(tag: ItemTag, records: Collection<RecordedAlteration>) {
     if (records.isEmpty()) {
         tag.remove(ALTERATION_TAG)
@@ -251,12 +251,12 @@ fun writeAlterationRecordsToTag(tag: ItemTag, records: Collection<RecordedAltera
     tag[ALTERATION_TAG] = compound
 }
 
-/** 兼容旧签名：写入不带动折叠标记的修改列表 */
+/** Legacy signature: writes an alteration list without persisted markers. */
 fun writeAlterationsToTag(tag: ItemTag, alterations: Collection<SDataAlteration>) {
     writeAlterationRecordsToTag(tag, alterations.map { RecordedAlteration(it) })
 }
 
-/** 直接读写物品 NBT 修改的 API，供宝石系统等外部功能使用 */
+/** API for directly reading and writing item NBT alterations, used by external features such as the gem system. */
 fun ItemStack.getItemAlterations(): List<SDataAlteration> = readAlterationsFromNBT(this)
 
 fun ItemStack.getItemAlterationRecords(): List<RecordedAlteration> = readAlterationRecordsFromNBT(this)
@@ -272,32 +272,31 @@ fun ItemStack.putItemAlterations(alterations: Collection<SDataAlteration>) {
 }
 
 /**
- * 追加/覆盖一条实例修改（按名称去重）。同名条目已折叠（persisted）时保留其
- * persisted 标记——例如同名 gem 重新镶嵌不会改变「效果已写入 NBT」的事实。
+ * Adds or replaces an instance alteration, deduplicating by name. If an existing same-named entry has been folded (persisted),
+ * preserve its persisted marker; for example, socketing a gem with the same name again does not change the fact that its effect is already in NBT.
  */
 fun ItemStack.addItemAlteration(alteration: SDataAlteration, persisted: Boolean = false) {
     val current = getItemAlterationRecords().filter { it.alteration.name != alteration.name }
     putItemAlterationRecords(current + RecordedAlteration(alteration, persisted))
 }
 
-/** 按名称移除一条实例修改记录（注意：已折叠进 NBT 的效果不会因此撤回） */
+/** Removes an instance alteration record by name (effects already folded into NBT are not reverted). */
 fun ItemStack.removeItemAlteration(name: String) {
     putItemAlterationRecords(getItemAlterationRecords().filter { it.alteration.name != name })
 }
 
 /**
- * 构建管线入口：计算「模板修改 + 实例修改」并应用到物品数据。
+ * Build pipeline entry point: computes and applies template and instance alterations to item data.
  *
- * 规则：
- * - 模板修改每次构建都作用于全新模板数据，天然幂等，全部应用；
- *   与实例修改同名时以模板为准（跳过同名实例条目，防止 ADD 类操作翻倍）。
- * - 实例修改中，指向 NBT 持久化目标（[PERSISTENT_ALTERATION_PREFIXES]，如
- *   `sertraline:vars`）的条目只应用**一次**：应用后打上 persisted 标记，
- *   效果随 vars 写入 `sertraline_data` NBT 永久保留；之后重建不再重放，
- *   即使移除记录也无法撤回（但记录仍保留供追溯）。
- * - 其余实例修改每次重建都重放（可撤回：移除记录后重建即还原）。
+ * Rules:
+ * - Apply all template alterations to fresh template data on every build; this is naturally idempotent.
+ *   If a template alteration has the same name as an instance alteration, the template takes precedence and the instance entry is skipped to prevent operations such as ADD from being doubled.
+ * - Apply instance alterations targeting persistent NBT ([PERSISTENT_ALTERATION_PREFIXES], such as
+ *   `sertraline:vars`) **once**: mark them as persisted after applying. Their effects are permanently stored with vars in
+ *   `sertraline_data` NBT and are not replayed during later rebuilds. Removing the record cannot undo them, though the record remains for tracing.
+ * - Replay all other instance alterations on every rebuild. They are reversible: removing the record and rebuilding restores the original state.
  *
- * @return 本次应写回 NBT 的完整记录列表
+ * @return The complete record list to write back to NBT.
  */
 fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): List<RecordedAlteration> {
     val templateAlterations = parseAlterations(template.getDeepData(ALTERATION_DATA_KEY))
@@ -310,15 +309,15 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
     val outRecords = mutableListOf<RecordedAlteration>()
     for (record in records) {
         val alteration = record.alteration
-        if (alteration.name in templateNames) continue // 模板同名优先，实例条目丢弃
+        if (alteration.name in templateNames) continue // Template entry takes precedence; discard the same-named instance entry.
         when {
-            // 已折叠进 NBT：效果已永久存在，不再重放，仅保留记录
+            // Already folded into NBT: the effect is permanent, so do not replay it; keep only the record.
             record.persisted && alteration.isPersistentTarget() -> outRecords += record
             else -> {
                 applied += alteration
-                // NBT 持久化目标：应用后即刻标记为已折叠——sertralineAdapter 会把
-                // 修改后的 vars 写入 sertraline_data，本轮构建后效果永久生效。
-                // 保存修改前快照，供宝石槽位重排时先撤回再重放。
+                // Persistent NBT target: mark it as folded immediately after applying. sertralineAdapter writes
+                // the modified vars to sertraline_data, making the effect permanent after this build.
+                // Save the pre-change snapshot so gem socket reordering can revert and replay it.
                 outRecords += if (alteration.isPersistentTarget()) {
                     val (previousPresent, previous) = readPersistentTargetState(rebuild, alteration.key)
                     val previousParent = readPersistentParentState(rebuild, alteration.key)
@@ -341,13 +340,13 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
         devLog("Applying ${applied.size} alteration(s) to item ${template.key}: ${applied.map { it.name }}")
         applied.applyAllTo(template.data)
     }
-    // 模板修改不写入 NBT 记录（每次构建自行生效）；只有实例修改需要记录
+    // Template alterations apply on every build and are not recorded in NBT; only instance alterations need records.
     return outRecords
 }
 
 /**
- * 读取持久化目标当前的 NBT 值（如 `sertraline:vars.test1` -> `sertraline_data.test1`）。
- * 用于折叠修改前记录目标值。目标不存在时返回 null。
+ * Reads the current NBT value at a persistent target (for example, `sertraline:vars.test1` -> `sertraline_data.test1`).
+ * Used to record the target value before folding an alteration. Returns null if the target does not exist.
  */
 fun readPersistentTargetValue(itemStack: ItemStack?, key: String): Any? {
     return readPersistentTargetState(itemStack, key).second
@@ -440,11 +439,11 @@ private fun readPersistentParentState(itemStack: ItemStack?, key: String): Persi
 }
 
 /**
- * 反向撤回一条已折叠的持久化修改：直接改写 `sertraline_data` NBT。
+ * Reverses a folded persistent alteration by directly modifying `sertraline_data` NBT.
  * - New records restore their exact pre-application value for every operation.
  * - Legacy records without snapshots use the former best-effort inverse.
- * - ADD：应用相反数
- * - REMOVE / 其他：无法可靠反推，删除该键（vars 缺省时模板默认值接管）
+ * - ADD: apply the opposite value.
+ * - REMOVE / other: cannot be reliably reversed, so delete the key (the template default takes over when vars is absent).
  */
 fun revertPersistedAlteration(itemStack: ItemStack, record: RecordedAlteration) {
     val alteration = record.alteration
@@ -525,5 +524,5 @@ fun revertPersistedAlteration(itemStack: ItemStack, record: RecordedAlteration) 
     tag.saveTo(itemStack)
 }
 
-/** 供 ItemTagData 读取时判断节点存在性 */
+/** Checks whether a node exists when reading ItemTagData. */
 fun ItemStack.hasAlterationsNBT(): Boolean = getItemTag(true)[ALTERATION_TAG] != null

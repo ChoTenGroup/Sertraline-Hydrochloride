@@ -114,7 +114,7 @@ object GlobalListenerManager {
             return
         }
 
-        // ---- prepare：全部解析，任何一条失败不影响现有注册 ----
+        // ---- Prepare: parse everything; a failure does not affect existing registrations. ----
         val plugin = BukkitPlugin.getInstance()
         val parsed = mutableListOf<GlobalListener>()
         dir.walk()
@@ -135,7 +135,7 @@ object GlobalListenerManager {
                 }
             }
 
-        // ---- commit：注销旧 + 注册新（主线程，dummyListener 整体注销） ----
+        // ---- Commit: unregister old and register new (main thread; unregister dummyListener as a whole). ----
         unregisterAll()
         lastFire.clear()
         for (listener in parsed) {

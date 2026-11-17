@@ -249,7 +249,7 @@ object Sertraline : Plugin() {
     @Volatile var allowAsyncLog = true
     var isEnabled = false
     val fileLastModified: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
-    /** item id → 来源文件绝对路径（增量加载合并用；仅 item 增量模式写入） */
+    /** Item ID -> absolute source file path (used for incremental load merging; written only in item incremental mode). */
     val itemSourceFile: ConcurrentHashMap<String, String> = ConcurrentHashMap()
 
     // Bounded script caches — Caffeine provides max-size + TTL eviction to prevent unbounded memory growth.
@@ -472,8 +472,8 @@ object Sertraline : Plugin() {
             // save public-temporary items, restore after reload
             manager.preReload()
 
-            // ---- 候选构建阶段：全部 loader 写入局�?LoadContext，不触碰 live registry ----
-            // 任一 loader 抛出未捕获异常时本轮候选整体作废，live registry 保持上一轮完整状态（last-good）�?
+            // ---- Candidate build phase: all loaders write to the local LoadContext and do not touch the live registry. ----
+            // If any loader throws an uncaught exception, discard the candidate and keep the live registry at its previous complete state (last-good).
             val loadContext = LoadContext()
             var candidateFailed = false
 
@@ -490,7 +490,7 @@ object Sertraline : Plugin() {
             registerNativeTagAdapter()
             registerNativeAttributeProviders()
 
-            // 全部文件加载流程开始
+            // Start loading all files.
             SertralineAllFileLoadPreEvent(loadContext).call()
 
             // Templates load first; all subsequent configs may reference them
@@ -537,8 +537,8 @@ object Sertraline : Plugin() {
             }
             ReloadCollector.addStat(console.asLangText("Reload_Stat_Items", loadContext.items.size))
 
-            // loreFormats 在候选中构建，发布时由 publishToLive 整体替换引用；
-            // 并发读侧在发布前始终看到旧的完整 map，无空 map 窗口
+            // Build loreFormats in the candidate and replace the reference as a whole during publishToLive.
+            // Concurrent readers continue to see the complete old map until publish, with no empty-map window.
             try { loadLoreFormatFiles(loadContext) } catch (e: Exception) {
                 severeL("LoreFormat_Load_Error_Parse", "lore-formats", e.message ?: "Unknown error")
                 candidateFailed = true
@@ -552,8 +552,8 @@ object Sertraline : Plugin() {
             ReloadCollector.addStat(console.asLangText("Reload_Stat_CraftingStations", loadContext.craftingStations.size))
 
             if (candidateFailed) {
-                // 候选构建失败：不发布、不触发 SertralineReloadEvent / recipe/listener 重载�?
-                // live registry 保持 last-good，仅恢复临时物品并输出本轮报�?
+                // Candidate build failed: do not publish or trigger SertralineReloadEvent / recipe/listener reloads.
+                // Keep the live registry at last-good; only restore temporary items and print this pass's report.
                 severeL("Reload_Candidate_Failed")
                 SertralineAllFileLoadPostEvent(loadContext, published = false).call()
                 manager.postReload()
@@ -561,10 +561,10 @@ object Sertraline : Plugin() {
                 return
             }
 
-            // ---- 发布阶段：候选一次性替换 live registry ----
-            // 注：曾有 `if (loadContext.itemsLoadedIncrementally) mergeLiveItemsForIncrementalPublish(...)`
-            // 分支，但该标志只在 `context == null` 时才会被置位，reload 恒带 context，
-            // 所以它从未执行过（incremental-loading 对 reload 不生效，候选总是全量解析）。
+            // ---- Publish phase: replace the live registry with the candidate in one operation. ----
+            // Note: an `if (loadContext.itemsLoadedIncrementally) mergeLiveItemsForIncrementalPublish(...)` branch used to exist,
+            // but this flag is set only when `context == null`; reload always has a context,
+            // so the branch never ran (incremental-loading does not affect reload; candidates are always parsed in full).
             try {
                 loadContext.publishToLive()
                 itemExpectedRevision.clear()
@@ -619,9 +619,9 @@ object Sertraline : Plugin() {
                 severeL("Config_Load_Error_Parse", "item-update-scheduler", e.message ?: "Unknown error")
             }
 
-            // ---- 异步 prepare：解�?recipe 候选（不触�?Bukkit registry�?----
+            // ---- Async prepare: resolve recipe candidates without touching the Bukkit registry. ----
             // The custom crafting system depends on 1.13+/1.14+ APIs; lower-version files are excluded, so we skip directly
-            // null = prepare 失败，commit 阶段跳过以保留当前已注册�?recipe（last-good�?
+            // null = prepare failed; skip during commit to preserve currently registered recipes (last-good).
             var recipeCandidates: List<Any?>? = null
             if (VersionHelper.isOrAbove114()) {
                 try {
@@ -650,8 +650,8 @@ object Sertraline : Plugin() {
     }
 
     private fun runRecipeSyncTasks(sender: CommandSender?, recipeCandidates: List<Any?>?, loadContext: LoadContext) {
-        // 主线�?commit：旧 recipe 先注销，候选注册失败按条目记账，整体失败恢复旧集合�?
-        // prepare 失败（null）时跳过，保留当前已注册 recipe
+        // Main-thread commit: unregister old recipes first, track candidate registration failures per entry, and restore the old set if the overall commit fails.
+        // Skip when prepare fails (null), preserving the currently registered recipes.
         if (VersionHelper.isOrAbove114() && recipeCandidates != null) {
             try {
                 Class.forName("io.github.zzzyyylllty.sertraline.config.LoadRecipeFilesKt")

@@ -19,7 +19,7 @@ fun itemSerializer(itemStack: ItemStack, player: Player?): AbstractSItem? {
     // Fast path: skip serialization → processing → deserialization when there are no placeholders and no dynamic content
     if (!item.hasPlaceholders && !item.hasDynamics) return item
     val json = item.serialize() ?: return item
-    // 恢复必须经过工厂：shouldAdapt 是 transient 的运行时状态，不能由 Gson 带回
+    // Restoration must go through the factory: shouldAdapt is transient runtime state and cannot be restored by Gson.
     return SItemFactory.deserialize(tagManager.processItem(json, item, itemStack, player))
 }
 
