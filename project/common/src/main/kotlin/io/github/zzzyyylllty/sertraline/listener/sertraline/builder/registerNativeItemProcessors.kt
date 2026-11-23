@@ -50,7 +50,6 @@ fun registerNativeAdapter() {
         commonAdapter(item, sItem, player)
     }
 
-    // Reattach processor sections registered by external plugins after every reload; otherwise they silently stop working after /sreload.
     ExternalItemProcessors.applyExternalProcessors()
 
 }

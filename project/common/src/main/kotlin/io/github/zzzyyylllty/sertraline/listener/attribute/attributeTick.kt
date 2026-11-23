@@ -7,10 +7,19 @@ import taboolib.common.LifeCycle
 import taboolib.common.platform.Awake
 import taboolib.common.platform.event.SubscribeEvent
 import taboolib.common.platform.function.submit
+import taboolib.common.platform.service.PlatformExecutor.PlatformTask
+
+private var attributeTask: PlatformTask? = null
 
 @Awake(LifeCycle.ACTIVE)
 fun startAttributeTick() {
-    submit(period = 1) { SertralineAttributeEngine.pulse() }
+    stopAttributeTick()
+    attributeTask = submit(period = 1) { SertralineAttributeEngine.pulse() }
+}
+
+internal fun stopAttributeTick() {
+    attributeTask?.cancel()
+    attributeTask = null
 }
 
 @SubscribeEvent

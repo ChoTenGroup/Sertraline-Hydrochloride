@@ -666,8 +666,9 @@ object PlatformCompat {
 
     // SmithingInventory is a 1.16+ class, absent in the v11200 (1.12.2) compile surface; the param is degraded to Any? and cast to Inventory internally (present in all versions).
     // On legacy12 the smithing listener isn't compiled at all (see common's sourceSets exclude), so this method is never called
+    // Both layouts put the result last: [base, addition, result] or [template, base, addition, result].
     fun getSmithingInputs(inventory: Any?): List<ItemStack> =
-        (inventory as? Inventory)?.contents?.take(2)?.filterNotNull() ?: emptyList()
+        (inventory as? Inventory)?.contents?.dropLast(1)?.filterNotNull() ?: emptyList()
 
     fun registerPaperEvents(plugin: Plugin, hooks: PaperEventHooks) {
         CompatLog.warning("Warning_Paper_Only_Events")
@@ -675,7 +676,7 @@ object PlatformCompat {
 
     fun registerArmorPolling(plugin: Plugin, enabled: Boolean, onArmorChange: (Player) -> Unit) {
         if (!enabled) return
-        val cache = ConcurrentHashMap<UUID, String>()
+        val cache = HashMap<UUID, Array<ItemStack?>>()
         plugin.server.scheduler.runTaskTimer(plugin, Runnable {
             val online = plugin.server.onlinePlayers
             if (online.isEmpty()) {
@@ -683,11 +684,11 @@ object PlatformCompat {
                 return@Runnable
             }
             for (p in online) {
-                val key = p.inventory.armorContents.joinToString("|") { item ->
-                    "${item.type.name}:${item.amount}:${item.itemMeta?.hashCode()}"
-                }
-                val prev = cache.put(p.uniqueId, key)
-                if (prev != null && prev != key) {
+                val current = p.inventory.armorContents
+                val prev = cache[p.uniqueId]
+                if (prev != null && prev.contentEquals(current)) continue
+                cache[p.uniqueId] = current.map { it?.clone() }.toTypedArray()
+                if (prev != null) {
                     try {
                         onArmorChange(p)
                     } catch (e: Exception) {

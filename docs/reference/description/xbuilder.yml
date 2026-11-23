@@ -12,19 +12,14 @@
 # Please do not directly modify this file
 # If you want to add mappings, please create more files in this directory to add
 
-
 _info:
   native: 12104
   support:
     min: 0
     max: 99999
-sertraline:tier: TIER
-sertraline:type: TYPE
-sertraline:vals:
-  _: ANY
-sertraline:vars:
-  _: ANY
-sertraline:dynamics:
-  _: ANY
-sertraline:actions:
-  (LIST)*: ACTION
+xbuilder:material: MATERIAL
+xbuilder:name: TEXT
+xbuilder:lore: LIST|TEXT
+xbuilder:damage: INT
+xbuilder:unbreakable: BOOLEAN
+xbuilder:glow: BOOLEAN

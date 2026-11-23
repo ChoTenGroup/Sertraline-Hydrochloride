@@ -6,6 +6,7 @@ import io.github.zzzyyylllty.sertraline.item.sertralineItemBuilder
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.util.ExternalItemHelper
+import io.github.zzzyyylllty.sertraline.util.ItemReflections
 import io.github.zzzyyylllty.sertraline.util.assembleCBClassCompat
 import io.github.zzzyyylllty.sertraline.util.assembleMCClass
 import io.github.zzzyyylllty.sertraline.util.getClazz
@@ -56,15 +57,8 @@ object NMSRecipeFactory {
 
     // ==================== Reflection cache: ResourceLocation (1.21.4) / Identifier (26.1.2) ====================
 
-    private val clazzResourceLocation: Class<*> by lazy {
-        when (minecraftVersion) {
-            MinecraftVersion.v1_21_4 -> getClazzCompat(
-                "net.minecraft.resources.ResourceLocation",
-                "net.minecraft.resources.MinecraftKey"
-            )
-            MinecraftVersion.v26_1_2 -> getClazz("net.minecraft.resources.Identifier")
-        }
-    }
+    private val clazzResourceLocation: Class<*> get() = ItemReflections.clazz_ResourceLocation
+
     private val methodRLFromNamespaceAndPath by lazy {
         getDeclaredMethodCompat(
             clazzResourceLocation,
@@ -112,9 +106,6 @@ object NMSRecipeFactory {
     }
     private val methodAsNMSCopy by lazy {
         clazzCraftItemStack.getDeclaredMethod("asNMSCopy", org.bukkit.inventory.ItemStack::class.java)
-    }
-    private val methodAsBukkitCopy by lazy {
-        clazzCraftItemStack.getDeclaredMethod("asCraftMirror", getClazz(assembleMCClass("world.item.ItemStack")))
     }
 
     private fun toNMSStack(bukkit: org.bukkit.inventory.ItemStack): Any {

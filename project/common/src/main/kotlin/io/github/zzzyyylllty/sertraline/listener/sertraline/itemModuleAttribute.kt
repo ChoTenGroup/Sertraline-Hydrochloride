@@ -5,6 +5,7 @@ import io.github.zzzyyylllty.sertraline.attribute.data.formatAttributeValue
 import io.github.zzzyyylllty.sertraline.attribute.data.parseAttributeValue
 import io.github.zzzyyylllty.sertraline.config.asListEnhanced
 import io.github.zzzyyylllty.sertraline.event.ItemLoadEvent
+import io.github.zzzyyylllty.sertraline.logger.warningL
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
 
@@ -30,11 +31,14 @@ fun itemModuleAttribute(e: ItemLoadEvent) {
             key in attributeReservedKeys -> e.itemData["attribute:$key"] = rawValue?.toString() ?: ""
             rawValue == null -> continue
             else -> {
-                e.itemData["attribute:$key"] = rawValue
-                val parsed = parseAttributeValue(rawValue) ?: continue
                 val type = snapshot.types[key]
-                    ?: if (e.context == null) AttributeRegistry.getOrRegister(key) else null
-                val name = type?.name ?: key
+                val parsed = parseAttributeValue(rawValue)
+                if (type == null || parsed == null) {
+                    warningL("Config_Load_Error_Parse", e.itemKey, "Invalid attribute '$rawKey' or value '$rawValue'")
+                    continue
+                }
+                e.itemData["attribute:$key"] = rawValue
+                val name = type.name
                 val value = formatAttributeValue(type, parsed.first, parsed.second)
                 loreLines.add("<!i><#777777>| <#cccccc>$name <white>$value")
             }

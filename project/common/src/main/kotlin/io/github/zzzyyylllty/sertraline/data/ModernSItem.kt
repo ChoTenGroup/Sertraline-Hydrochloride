@@ -201,11 +201,9 @@ fun deserializeSertraline(string: String?): ModernSItem? {
     return SItemFactory.deserialize(string) as? ModernSItem
 }
 
-/**
- * Deep copy of a LinkedHashMap
- */
-@Suppress("UNCHECKED_CAST")
-fun deepCopyMap(original: LinkedHashMap<String, Any?>): LinkedHashMap<String, Any?> {
+fun deepCopyMap(original: LinkedHashMap<String, Any?>): LinkedHashMap<String, Any?> = copyItemMap(original)
+
+internal fun copyItemMap(original: Map<String, Any?>): LinkedHashMap<String, Any?> {
     val copy = LinkedHashMap<String, Any?>(original.size)
     for ((key, value) in original) {
         copy[key] = deepCopyValue(value)

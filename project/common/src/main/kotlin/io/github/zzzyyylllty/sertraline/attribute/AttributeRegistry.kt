@@ -11,7 +11,11 @@ object AttributeRegistry {
     data class Snapshot(
         val types: Map<String, AttributeType>,
         val operations: Map<String, AttributeExpression>,
-    )
+    ) {
+        internal val baseUpdateInterval = types.values.asSequence()
+            .filter { it.base.type != "constant" }.map { it.base.updateInterval }
+            .filter { it > 0 }.minOrNull() ?: Long.MAX_VALUE
+    }
 
     private val builtins = java.util.Collections.unmodifiableMap(builtinTypes().associate { it.id to freeze(it) })
     private val apiTypes = linkedMapOf<String, AttributeType>()

@@ -1,5 +1,5 @@
 test_choten_sword:
-  choten:
+  chotenatb:
     attack_damage: 30
     max_health: "10%"
     movement_speed: "5%"

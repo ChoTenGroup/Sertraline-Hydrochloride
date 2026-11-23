@@ -1,6 +1,13 @@
+import java.nio.file.FileSystems
+import java.nio.file.Files
+
+val platform: String = (findProperty("platform") ?: "paper") as String
+val bundledTaboolibVersion = rootProject.libs.versions.taboolib
+
 taboolib {
     description {
         name("Sertraline")
+        if (platform != "legacy12") bukkitApi("1.21.4")
         desc("An advanced item plugin. ChoTen item management plugin.")
         contributors {
             name("AkaCandyKAngel")
@@ -26,28 +33,27 @@ taboolib {
         }
     }
 
-    relocate("top.maplex.arim", "io.github.zzzyyylllty.sertraline.dep.arim")
     relocate("ink.ptms.um", "io.github.zzzyyylllty.sertraline.dep.um")
-    relocate("com.alibaba", "io.github.zzzyyylllty.sertraline.dep.alibaba")
-    relocate("kotlinx.serialization", "kotlinx.serialization181")
-    relocate("io.github.projectunified.uniitem", "io.github.zzzyyylllty.sertraline.dep.uniitem")
+    relocate("org.objectweb.asm", "org.objectweb.asm9")
+
+
+
     relocate("com.fasterxml.jackson", "io.github.zzzyyylllty.sertraline.dep.jackson")
-//    relocate("com.mojang.datafixers", "io.github.zzzyyylllty.sertraline.dep.datafixers")
-    relocate("io.netty.handler.codec.http", "io.github.zzzyyylllty.sertraline.dep.http")
-    relocate("io.netty.handler.codec.rtsp", "io.github.zzzyyylllty.sertraline.dep.rtsp")
-    relocate("io.netty.handler.codec.spdy", "io.github.zzzyyylllty.sertraline.dep.spdy")
-    relocate("io.netty.handler.codec.http2", "io.github.zzzyyylllty.sertraline.dep.http2")
+
+
+
+
+
     relocate("org.tabooproject.fluxon", "io.github.zzzyyylllty.sertraline.dep.fluxon")
     relocate("com.github.benmanes.caffeine", "io.github.zzzyyylllty.sertraline.dep.caffeine")
     relocate("org.kotlincrypto", "io.github.zzzyyylllty.sertraline.dep.kotlincrypto")
     // FastStats ships as a self-contained SDK; relocate it so it can never clash with another
     // plugin that bundles a different FastStats version in the same class loader.
     relocate("dev.faststats", "io.github.zzzyyylllty.sertraline.dep.faststats")
-//    relocate("org.objectweb.asm", "io.github.zzzyyylllty.sertraline.dep.asm")
+
 }
 
 
-val platform: String = (findProperty("platform") ?: "paper") as String
 // Both legacy12 (MC 1.12.2) and spigot use the spigot source set of :project:spigot (pure Bukkit API + fallback paths)
 val useSpigotOutput: Boolean = platform != "paper"
 
@@ -68,7 +74,25 @@ dependencies {
 }
 
 tasks {
-    val taboolibMainTask = named("taboolibMainTask")
+    val pluginArchive = named<Jar>("jar").flatMap { it.archiveFile }
+    val taboolibMainTask = named("taboolibMainTask") {
+        inputs.property("descriptorTaboolibVersion", bundledTaboolibVersion)
+        inputs.property("descriptorPlatform", platform)
+        doLast {
+            FileSystems.newFileSystem(pluginArchive.get().asFile.toPath(), emptyMap<String, Any>()).use { archive ->
+                val descriptor = archive.getPath("/plugin.yml")
+                val timestamp = Files.getLastModifiedTime(descriptor)
+                val content = Files.readAllLines(descriptor, Charsets.UTF_8)
+                    .filterNot { platform == "legacy12" && it.startsWith("api-version:") }
+                    .map { line ->
+                        if (line.contains("Powered by TabooLib")) "# Powered by TabooLib " + bundledTaboolibVersion.get()
+                        else line
+                    }
+                Files.write(descriptor, content, Charsets.UTF_8)
+                Files.setLastModifiedTime(descriptor, timestamp)
+            }
+        }
+    }
 
     // Platform classes directory Sync task (registered in :project:spigot): builds first, then expands into the main jar
     val platformClassesTask = if (useSpigotOutput) ":project:spigot:spigotPlatformClasses" else ":project:spigot:paperPlatformClasses"
@@ -120,37 +144,29 @@ tasks {
     val buildAll by registering {
         group = "build"
         description = "Build all platform jars (Paper + Spigot + Legacy)"
-        dependsOn(named("build"), named("buildSpigot"), named("buildLegacy"))
+        dependsOn(named("build"), ":project:common:check", ":project:spigot:check", named("buildSpigot"), named("buildLegacy"))
     }
 }
 
-// Convenience tasks: build the Spigot / Legacy platform jars with a single command (equivalent to ./gradlew build -Pplatform=xxx -x test).
-// Cannot use GradleBuild: two GradleBuild tasks pointing at the same dir inside one Gradle session collide on the
-// build path (:Sertraline) in the IncludedBuildRegistry, erroring with "Included build ... same as included build" (gradle/gradle#13522).
-// Instead each spawns its own gradlew process via exec (--no-daemon ensures no queueing behind the busy current daemon); behavior is equivalent.
-val gradlewScript: String = rootProject.file(
-    if (System.getProperty("os.name").lowercase().contains("win")) "gradlew.bat" else "gradlew"
-).absolutePath
-// Inherit the JDK running the current Gradle daemon so the nested builds also run on JDK 21
-val gradleJdkHome: String = System.getProperty("java.home")
+// Variant builds use their own output and project cache directories.
+val wrapper = rootProject.file(if (System.getProperty("os.name").startsWith("Windows")) "gradlew.bat" else "gradlew")
+val offline = gradle.startParameter.isOffline
+val useMavenLocal = providers.gradleProperty("useMavenLocal").isPresent
 
-fun registerNestedPlatformBuild(name: String, platform: String, description: String): TaskProvider<Exec> {
-    return tasks.register(name, Exec::class) {
-        group = "build"
-        this.description = description
-        workingDir = rootProject.projectDir
-        commandLine(
-            gradlewScript, "-p", rootProject.projectDir,
-            "-Dorg.gradle.java.home=$gradleJdkHome",
-            "-Pplatform=$platform", "build", "-x", "test",
-            "--no-daemon", "--console=plain"
-        )
-    }
+fun registerPlatformBuild(name: String, target: String) = tasks.register<Exec>(name) {
+    group = "build"
+    description = "Build and test the $target variant"
+    workingDir(rootProject.projectDir)
+    val command = mutableListOf(
+        wrapper.absolutePath, "-Pplatform=$target", "--project-cache-dir",
+        rootProject.file(".gradle/$target").absolutePath, "build", "--console=plain",
+    )
+    if (offline) command.add("--offline")
+    if (useMavenLocal) command.add("-PuseMavenLocal")
+    commandLine(command)
+    mustRunAfter(tasks.named("build"))
 }
 
-val buildSpigot = registerNestedPlatformBuild(
-    "buildSpigot", "spigot", "Build Spigot platform jar (Sertraline-*-Spigot.jar)"
-)
-val buildLegacy = registerNestedPlatformBuild(
-    "buildLegacy", "legacy12", "Build Legacy platform jar (Sertraline-*-Legacy.jar, MC 1.12.2 / Java 8)"
-)
+val buildSpigot = registerPlatformBuild("buildSpigot", "spigot")
+val buildLegacy = registerPlatformBuild("buildLegacy", "legacy12")
+buildLegacy.configure { mustRunAfter(buildSpigot) }

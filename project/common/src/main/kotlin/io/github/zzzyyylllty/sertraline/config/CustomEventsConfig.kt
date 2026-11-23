@@ -15,4 +15,8 @@ object CustomEventsConfig {
     @Config("custom-events.yml", migrate = true)
     lateinit var config: Configuration
         private set
+
+    internal fun publish(candidate: Configuration) {
+        config = candidate
+    }
 }

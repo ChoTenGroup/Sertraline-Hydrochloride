@@ -40,7 +40,7 @@ ChoTen Item management system service (Liminal Skyline v4.0 Service)
 
 </p>
 
-**SERTRALINE Supports 1.21.4-26.2**
+**Standard and Spigot target the Minecraft 1.21.4 API on Java 21. Legacy targets Minecraft 1.12.2 on Java 8.**
 
 </div>
 
@@ -74,49 +74,22 @@ Click here to donate via [Afdian](https://afdian.com/a/liminalskyline).
 * [TheFloodDragon](https://github.com/TheFloodDragon) - ratziel's author.
 * [Xiao-MoMi](https://github.com/Xiao-MoMi/) - craft-engine's author, craft-engine is this plugin's reference.
 
-## As dependency
+## Build and test
 
-```Gradle kotlin
-repositories {
-    // DEPRECATED
-    maven { url = uri("https://jitpack.io") }
-}
+Install JDK 21. Set JAVA_HOME to JDK 21, or set JDK21_HOME to its location when using a newer launcher JDK. Use gradlew.bat on Windows.
 
-dependencies {
-    // DEPRECATED, 
-    implementation("com.github.zzzyyylllty:Sertraline-Hydrochloride:VERSION")
-}
-```
+| Command | Output |
+| --- | --- |
+| ./gradlew build | Standard and Free jars under plugin/build/libs |
+| ./gradlew -Pplatform=spigot build | Spigot jars under plugin/build-spigot/libs |
+| ./gradlew -Pplatform=legacy12 build | Legacy jars under plugin/build-legacy12/libs |
+| ./gradlew :plugin:buildAll | All three platform builds and their tests |
+| ./gradlew :project:common:apiJar | Developer jar under project/common/build/libs |
 
-```Gradle kotlin
-repositories {
-    // CENTRAL
-}
+Each platform builds against its own server API. The Legacy build targets Java 8 bytecode and omits modern recipe and component features. The build itself uses JDK 21 for every platform.
 
-dependencies {
-    implementation("io.github.zzzyyylllty.sertraline:common:VERSION")
-}
-```
+## Use as a dependency
 
-## Build Runtime Version
+Build the developer JAR with :project:common:apiJar. Add that jar to your plugin project's compileOnly classpath alongside the matching server API. The server loads Sertraline from the runtime jar and your plugin should declare its dependency on Sertraline in its plugin description.
 
-Required Java 21.
-
-Runtime version for normal use.
-
-Build artifact is in `plugin/build/libs` folder.
-
-```
-./gradlew clean build
-```
-
-## Build Api Version
-
-The api version includes the TabooLib core, intended for developers' use but not runnable.
-
-```
-./gradlew clean taboolibBuildApi -PDeleteCode
-```
-
-> The parameter `-PDeleteCode` indicates the removal of all logic code to reduce size.
-
+For item lookups and construction, use SertralineItemAPI. See [API documentation](docs/SertralineAPI-en.md), [模板语法](docs/Template-zh.md), and [默认战斗包](docs/DefaultCombatPack-zh.md).

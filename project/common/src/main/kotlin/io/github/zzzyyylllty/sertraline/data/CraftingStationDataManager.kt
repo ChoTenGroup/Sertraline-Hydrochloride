@@ -6,7 +6,6 @@ import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.database.CraftingSession
 import io.github.zzzyyylllty.sertraline.database.DatabaseManager
 import io.github.zzzyyylllty.sertraline.gui.CraftingStationManager
-import io.github.zzzyyylllty.sertraline.logger.infoS
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.util.minimessage.toComponent
@@ -31,7 +30,7 @@ object CraftingStationDataManager {
     /**
      * Saves a player's in-progress crafting session.
      */
-    fun saveSession(player: Player, stationId: String, recipeId: String, startTime: Long, totalSeconds: Double, consumedItems: List<ItemStack>) {
+    fun saveSession(player: Player, stationId: String, recipeId: String, startTime: Long, totalSeconds: Double, consumedItems: List<ItemStack>): Boolean =
         try {
             val uuid = player.uniqueId.toString()
             val itemsBlob = consumedItems.joinToString(";") { item ->
@@ -41,10 +40,11 @@ object CraftingStationDataManager {
             DatabaseManager.sessionMapper.insertOrUpdate(
                 CraftingSession(uuid, stationId, recipeId, startTime, totalSeconds, itemsBlob)
             ) { "uuid" eq uuid }
+            true
         } catch (e: Exception) {
             severeS("Failed to save crafting session for ${player.name}: ${e.message}")
+            false
         }
-    }
 
     /**
      * Reads a player's unfinished crafting session.
@@ -56,14 +56,8 @@ object CraftingStationDataManager {
             val session = DatabaseManager.sessionMapper.findById(uuid) ?: return null
 
             val items = if (session.consumedItemsBlob.isNotBlank()) {
-                session.consumedItemsBlob.split(";").mapNotNull { encoded ->
-                    try {
-                        val bytes = base64Decoder.decode(encoded)
-                        bytes.deserializeToItemStack()
-                    } catch (e: Exception) {
-                        warningS("Failed to deserialize consumed item for ${player.name}: ${e.message}")
-                        null
-                    }
+                session.consumedItemsBlob.split(";").map { encoded ->
+                    base64Decoder.decode(encoded).deserializeToItemStack()
                 }
             } else emptyList()
 
@@ -77,69 +71,50 @@ object CraftingStationDataManager {
     /**
      * Clears a player's crafting session data.
      */
-    fun clearSession(player: Player) {
+    fun clearSession(player: Player): Boolean =
         try {
             DatabaseManager.sessionMapper.deleteById(player.uniqueId.toString())
+            true
         } catch (e: Exception) {
             warningS("Failed to clear crafting session for ${player.name}: ${e.message}")
+            false
         }
-    }
 
-    /**
-     * Attempts to restore a player's unfinished crafting session.
-     * - If the crafting time has elapsed -> grant the outputs
-     * - If the crafting is unfinished -> return the materials
-     */
+    /** Claims one stored session on the server thread. Legacy rows may store the display name. */
     fun restoreSession(player: Player) {
-        val pending = loadSession(player) ?: return
-
-        // Always manipulate items on the main thread
-        submit(async = false) {
-            try {
-                val station = Sertraline.craftingStations[pending.stationId]
-                val recipe = station?.recipes?.values?.find { it.displayName == pending.recipeId }
-
-                val now = System.currentTimeMillis()
-                val elapsed = (now - pending.startTime) / 1000.0
-                val isComplete = elapsed >= pending.totalSeconds
-
-                if (isComplete && recipe != null) {
-                    // Crafting completed -> grant the outputs
-                    for (output in recipe.outputs) {
-                        val stack = output.build(player)
-                        player.giveItem(stack)
+        submit {
+            if (!player.isOnline) return@submit
+            val pending = loadSession(player) ?: return@submit
+            val station = Sertraline.craftingStations[pending.stationId]
+            val recipe = station?.recipes?.get(pending.recipeId)
+                ?: station?.recipes?.values?.firstOrNull { it.displayName == pending.recipeId }
+            val elapsed = (System.currentTimeMillis() - pending.startTime) / 1000.0
+            val outputs = if (recipe != null && elapsed >= pending.totalSeconds) {
+                try {
+                    recipe.outputs.map { output ->
+                    output.build(player).also { stack ->
+                        require(stack.type != org.bukkit.Material.AIR && stack.amount > 0) { "Crafting output is empty" }
                     }
-                    CraftingStationManager.fireLifecycleAgents(station!!, recipe, "onClaim", player)
-                    PlatformCompat.sendComponent(player, SertralineSettings.msgCraftingComplete.toComponent()
-                    )
-                    infoS("Restored completed craft for ${player.name}: ${pending.recipeId}")
-                } else {
-                    // Crafting unfinished -> return the materials
-                    for (item in pending.consumedItems) {
-                        player.inventory.addItem(item).values.forEach { leftover ->
-                            player.world.dropItem(player.location, leftover)
-                        }
-                    }
-                    if (recipe != null) {
-                        CraftingStationManager.fireLifecycleAgents(station!!, recipe, "onCancel", player)
-                        PlatformCompat.sendComponent(player, "<yellow>Your crafting was interrupted. Materials returned.</yellow>".toComponent())
-                    } else {
-                        PlatformCompat.sendComponent(player, "<yellow>Your crafting station/recipe no longer exists. Materials returned.</yellow>".toComponent())
-                    }
-                    infoS("Returned materials to ${player.name} for interrupted craft: ${pending.recipeId}")
                 }
-            } catch (e: Exception) {
-                severeS("Failed to restore crafting session for ${player.name}: ${e.message}")
-                // Fallback: return materials whenever possible
+                } catch (e: Exception) {
+                    severeS("Failed to restore crafting outputs for ${player.name}: ${e.message}")
+                    null
+                }
+            } else null
+
+            if (!clearSession(player)) return@submit
+            if (outputs != null && recipe != null && station != null) {
+                outputs.forEach { player.giveItem(it) }
+                CraftingStationManager.fireLifecycleAgents(station, recipe, "onClaim", player)
+                PlatformCompat.sendComponent(player, SertralineSettings.msgCraftingComplete.toComponent())
+            } else {
                 for (item in pending.consumedItems) {
-                    try {
-                        player.inventory.addItem(item).values.forEach { leftover ->
-                            player.world.dropItem(player.location, leftover)
-                        }
-                    } catch (_: Exception) {}
+                    player.inventory.addItem(item).values.forEach { player.world.dropItem(player.location, it) }
                 }
-            } finally {
-                clearSession(player)
+                if (recipe != null && station != null) {
+                    CraftingStationManager.fireLifecycleAgents(station, recipe, "onCancel", player)
+                }
+                PlatformCompat.sendComponent(player, "<yellow>Your crafting was interrupted. Materials returned.</yellow>".toComponent())
             }
         }
     }

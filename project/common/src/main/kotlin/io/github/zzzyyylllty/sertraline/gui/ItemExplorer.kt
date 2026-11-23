@@ -67,6 +67,8 @@ class ItemExplorer {
     companion object {
         private val sessions = ConcurrentHashMap<UUID, Session>()
 
+        internal fun clearSessions() = sessions.clear()
+
         /**
          * Session of [player], creating it on demand.
          *

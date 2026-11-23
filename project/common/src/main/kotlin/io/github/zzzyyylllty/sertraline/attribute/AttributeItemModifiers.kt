@@ -112,7 +112,7 @@ object AttributeItemModifiers {
             val id = AttributeRegistry.normalizeId(key.toString())
             if (id in reserved) return@mapNotNull null
             val parsed = parseAttributeValue(raw) ?: return@mapNotNull null
-            if (AttributeRegistry.getOrRegister(id) == null) return@mapNotNull null
+            if (AttributeRegistry.get(id) == null) return@mapNotNull null
             AttributeModifier(id, parsed.first, parsed.second, ModifierSource.parse(data["source"]?.toString()) ?: ModifierSource.OTHER,
                 AttributeSlot.parse(data["slot"]?.toString()?.takeIf { it.isNotBlank() } ?: slot) ?: AttributeSlot.ANY)
         }

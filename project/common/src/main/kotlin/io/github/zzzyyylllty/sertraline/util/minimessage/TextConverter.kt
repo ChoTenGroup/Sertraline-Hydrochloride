@@ -10,12 +10,22 @@ fun List<Any?>.legacyToMiniMessage(): List<Any?> {
     this.forEach { list.add(it.legacyToMiniMessage()) }
     return list
 }
+private val legacyHexPattern = Regex("&x((&[0-9a-fA-F]){6})")
+private val modernHexPattern = Regex("&#([0-9a-fA-F]{6})")
+private val simpleLegacyPattern = Regex("[&§]([0-9a-fk-or])", RegexOption.IGNORE_CASE)
+private val legacyTags = listOf(
+    "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", "gold", "gray",
+    "dark_gray", "blue", "green", "aqua", "red", "light_purple", "yellow", "white",
+    "obfuscated", "bold", "strikethrough", "underlined", "italic", "reset",
+)
+private const val LEGACY_CODES = "0123456789abcdefklmnor"
+
 fun String.legacyToMiniMessage(): String {
+    if ('&' !in this && '§' !in this) return this
     var text = this
 
     // 1. Handle hex color codes first - legacy &x&6&6&c&c&f&f
     // Matches the form: &x&6&6&c&c&f&f (fixed six hex characters)
-    val legacyHexPattern = Regex("&x((&[0-9a-fA-F]){6})")
     text = legacyHexPattern.replace(text) { matchResult ->
         if (isInsidePlaceholder(text, matchResult.range)) {
             matchResult.value
@@ -26,7 +36,6 @@ fun String.legacyToMiniMessage(): String {
     }
 
     // 2. Handle modern hex color codes: &#66ccff or &#ABCDEF
-    val modernHexPattern = Regex("&#([0-9a-fA-F]{6})")
     text = modernHexPattern.replace(text) { matchResult ->
         if (isInsidePlaceholder(text, matchResult.range)) {
             matchResult.value
@@ -35,64 +44,9 @@ fun String.legacyToMiniMessage(): String {
         }
     }
 
-    // 3. Handle color codes (legacy, case-insensitive)
-    val colorMap = mapOf(
-        '0' to "<black>",
-        '1' to "<dark_blue>",
-        '2' to "<dark_green>",
-        '3' to "<dark_aqua>",
-        '4' to "<dark_red>",
-        '5' to "<dark_purple>",
-        '6' to "<gold>",
-        '7' to "<gray>",
-        '8' to "<dark_gray>",
-        '9' to "<blue>",
-        'a' to "<green>",
-        'b' to "<aqua>",
-        'c' to "<red>",
-        'd' to "<light_purple>",
-        'e' to "<yellow>",
-        'f' to "<white>"
-    )
-
-    for ((code, tag) in colorMap) {
-        val pattern = Regex("[&§]$code", RegexOption.IGNORE_CASE)
-        text = pattern.replace(text) { matchResult ->
-            if (isInsidePlaceholder(text, matchResult.range)) {
-                matchResult.value
-            } else {
-                tag
-            }
-        }
-    }
-
-    // 4. Handle format codes
-    val formatMap = mapOf(
-        'k' to "<obfuscated>",
-        'l' to "<bold>",
-        'm' to "<strikethrough>",
-        'n' to "<underlined>",
-        'o' to "<italic>"
-    )
-
-    for ((code, tag) in formatMap) {
-        val pattern = Regex("[&§]$code", RegexOption.IGNORE_CASE)
-        text = pattern.replace(text) { matchResult ->
-            if (isInsidePlaceholder(text, matchResult.range)) {
-                matchResult.value
-            } else {
-                tag
-            }
-        }
-    }
-
-    // 5. Handle reset code
-    text = Regex("[&§]r", RegexOption.IGNORE_CASE).replace(text) { matchResult ->
-        if (isInsidePlaceholder(text, matchResult.range)) {
-            matchResult.value
-        } else {
-            "<reset>"
-        }
+    text = simpleLegacyPattern.replace(text) { match ->
+        if (isInsidePlaceholder(text, match.range)) match.value
+        else "<" + legacyTags[LEGACY_CODES.indexOf(match.groupValues[1].single().lowercaseChar())] + ">"
     }
 
     return text

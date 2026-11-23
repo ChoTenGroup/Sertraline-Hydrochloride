@@ -34,6 +34,7 @@ class LoadContext {
     val levels = LinkedHashMap<String, Level>()
     val loreFormats = LinkedHashMap<String, AbstractLoreFormat>()
     val craftingStations = LinkedHashMap<String, CraftingStation>()
+    internal val templateCounters = TemplateManager.Counters()
     val templates = LinkedHashMap<String, Map<String, Any?>>()
 
     /** itemCache entries written during this build (merged into the global itemCache when published). */
@@ -42,14 +43,9 @@ class LoadContext {
     /** Item IDs parsed during this build -> absolute source file paths (written to the live index only when published). */
     val itemSourceFiles: LinkedHashMap<String, String> = LinkedHashMap()
 
-    /** Absolute paths of files actually parsed during incremental item loading (used to decide what to merge when publishing). */
-    val parsedItemFiles = LinkedHashSet<String>()
 
-    /** All item files seen in the workspace during this build, whether parsed or skipped; files absent from this set were deleted. */
-    val seenItemFiles = LinkedHashSet<String>()
-
-    /** Whether item loading used incremental mode in this build (determines whether live entries are merged before publishing). */
-    var itemsLoadedIncrementally = false
+    internal val parsedWorkspaceFiles = LinkedHashMap<String, ParsedWorkspaceFile>()
+    internal var invalidConfiguration = false
 
     // ---- Live-registry fallback accessors ----
 
@@ -60,7 +56,6 @@ class LoadContext {
     val liveLevels: Map<String, Level> get() = io.github.zzzyyylllty.sertraline.Sertraline.levels
     val liveLoreFormats: Map<String, AbstractLoreFormat> get() = io.github.zzzyyylllty.sertraline.Sertraline.loreFormats
     val liveCraftingStations: Map<String, CraftingStation> get() = io.github.zzzyyylllty.sertraline.Sertraline.craftingStations
-    val liveTemplates: Map<String, Map<String, Any?>> get() = TemplateManager.getAllTemplates()
 
     /**
      * Publishes candidate contents to the live registry, replacing it as a whole.
@@ -96,13 +91,12 @@ class LoadContext {
         s.levels = newLevels
         s.craftingStations = newStations
         s.loreFormats = newLoreFormats
-        TemplateManager.publishTemplates(templates)
+        TemplateManager.publish(this)
         s.itemCache = newItemCache
         // Align the source index with the published itemMap, removing stale records for deleted entries,
         // and add paths parsed during this build. Candidate building no longer touches the live index.
-        s.itemSourceFile.putAll(itemSourceFiles)
-        s.itemSourceFile.keys.retainAll(items.keys)
-        // Publish itemMap last so readers that see new items have already seen all related auxiliary maps.
-        s.itemMap = java.util.concurrent.ConcurrentHashMap(items)
+        s.itemSourceFile = java.util.concurrent.ConcurrentHashMap(itemSourceFiles.filterKeys { it in items })
+        s.parsedWorkspaceFiles = LinkedHashMap(parsedWorkspaceFiles)
+        s.manager.public.publish(java.util.concurrent.ConcurrentHashMap(items))
     }
 }

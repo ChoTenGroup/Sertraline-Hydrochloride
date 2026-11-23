@@ -65,15 +65,8 @@ class ItemManager {
         throw IllegalStateException("No UUID available for private manager operation. Use 'smanager switch <uuid>' or specify a player.")
     }
 
-    fun preReload() {
-        public.preReload()
-    }
-
-    fun postReload() {
-        public.postReload()
-    }
-
     fun shutdown() {
+        public.clearTemporary()
         privateManager.shutdown()
     }
 

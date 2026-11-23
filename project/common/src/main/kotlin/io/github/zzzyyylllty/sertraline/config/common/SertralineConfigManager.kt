@@ -14,30 +14,30 @@ import taboolib.module.configuration.Configuration
  */
 object SertralineConfigManager {
 
-    val main = SConfigSpec(
+    var main = SConfigSpec(
         "config.yml",
         SertralineMainConfig.nodes,
         version = SertralineMainConfig.VERSION,
         migrations = SertralineMainConfig.migrations,
     )
-    val experimental = SConfigSpec(
+        private set
+    var experimental = SConfigSpec(
         "experimental.yml",
         SertralineExperimentalRegistry.nodes,
         version = SertralineExperimentalRegistry.VERSION,
         migrations = SertralineExperimentalRegistry.migrations,
     )
+        private set
 
     @Volatile
     private var bound = false
 
-    /** Database restart-only snapshot captured at startup (connection/mapper are lazy singletons and require a restart to recreate). */
-    @Volatile
-    private var startupDatabaseSnapshot: DatabaseStartupValues? = null
+    private var startup: SettingsSnapshot? = null
 
-    /** Database restart-only values, matching the paths consumed by DatabaseManager's lazy dbConfig. */
-    private class DatabaseStartupValues(
-        val enable: Boolean,
-        val filename: String,
+    internal class Candidate(
+        val main: SConfigSpec,
+        val experimental: SConfigSpec,
+        val settings: SettingsSnapshot,
     )
 
     /** Binds all configuration files (idempotent: skips the ENABLE call if PacketEventsUtil already bound them during LOAD). */
@@ -48,46 +48,39 @@ object SertralineConfigManager {
             main.bind()
             experimental.bind()
             SertralineSettings.load(main, experimental)
-            startupDatabaseSnapshot = DatabaseStartupValues(
-                enable = SertralineSettings.databaseEnable,
-                filename = SertralineSettings.databaseFilename,
-            )
+            startup = SertralineSettings.currentSnapshot()
             bound = true
         }
     }
 
-    fun reload() {
-        // TabooLib reloadSafely clears the in-memory configuration before parsing, so a damaged file leaves it empty.
-        // Snapshot the old contents first and restore the last-good state on failure so SertralineSettings does not silently fall back to defaults.
-        ConfigReloadGuard.reloadSafely(main.config, main.fileName)
-        // Runtime reload also performs version migrations (effective after a server-side plugin update), then adds missing nodes.
-        main.upgrade()
-        // Re-run sync on every reload so newly-registered nodes from a plugin upgrade
-        // get appended to the on-disk file (preserving existing user values/comments).
-        main.sync()
-        ConfigReloadGuard.reloadSafely(experimental.config, experimental.fileName)
-        experimental.upgrade()
-        experimental.sync()
-        SertralineSettings.load(main, experimental)
-        checkRestartOnlyChanges()
+    internal fun prepare(): Candidate {
+        val newMain = main.prepare()
+        val newExperimental = experimental.prepare()
+        return Candidate(newMain, newExperimental, SettingsSnapshot.of(newMain, newExperimental, SertralineSettings.currentSnapshot()))
     }
 
-    /**
-     * Checks restart-only settings: packet.register (PacketEvents lifecycle is determined at startup) and
-     * database.* (mapper connection is a lazy singleton) are not recreated during reload. If a startup value
-     * differs from the current file, log a notice instead of hot-swapping it.
-     */
-    private fun checkRestartOnlyChanges() {
-        val current = SertralineSettings.currentSnapshot()
-        val startup = startupDatabaseSnapshot
-        if (startup != null) {
-            val changedDb = startup.enable != current.databaseEnable || startup.filename != current.databaseFilename
-            if (changedDb) {
-                warningL("Config_Restart_Required", "database")
-            }
-        }
-        // If packet.register was false, PacketEvents was not initialized at startup and changing it back to true at runtime has no effect.
-        // The reverse change (true at startup, then false at runtime) only stops packet handlers from checking it and needs no notice.
+    internal fun publish(candidate: Candidate) {
+        main = candidate.main
+        experimental = candidate.experimental
+        SertralineSettings.publish(main, experimental, candidate.settings)
+        val initial = startup ?: return
+        val current = candidate.settings
+        if (initial.databaseValues() != current.databaseValues()) warningL("Config_Restart_Required", "database")
+        if (!initial.packetRegister && current.packetRegister) warningL("Config_Restart_Required", "packet.register")
+        if (initial.metricsEnabled != current.metricsEnabled || initial.metricsToken != current.metricsToken ||
+            initial.metricsCustomMetrics != current.metricsCustomMetrics || initial.metricsErrorTracking != current.metricsErrorTracking
+        ) warningL("Config_Restart_Required", "metrics")
+    }
+
+    private fun SettingsSnapshot.databaseValues(): List<Any> =
+        listOf(databaseEnable, databaseFilename, databaseHost, databasePort, databaseUser, databasePassword, databaseName, databaseTable)
+
+    fun reload() = publish(prepare())
+
+    internal fun reset() {
+        bound = false
+        startup = null
+        SertralineSettings.reset()
     }
 
     /** Main configuration object, retained for compatibility with existing call sites. */

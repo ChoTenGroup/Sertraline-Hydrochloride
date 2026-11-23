@@ -50,7 +50,7 @@ fun loadCraftingStationFile(file: File, regex: Regex, context: LoadContext? = nu
     }
 
     return try {
-        val raw = multiExtensionLoader(file) ?: return false
+        val raw = multiExtensionLoader(file, context) ?: return false
         val map = TemplateManager.resolveInMap(raw, context)
 
         if (map.isEmpty()) {

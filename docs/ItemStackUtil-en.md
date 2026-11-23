@@ -2,7 +2,6 @@
 
 `ItemStackUtil` provides item NBT read/write and rebuild utilities, built on TabooLib's `ItemTag` and Sertraline's item rebuild pipeline.
 
-> The vars helpers (`getVar` / `hasVar` / `setVar` / `setVarDirect` / `removeVar` / `removeVarDirect`) require plugin version **3.11.14+**.
 
 ---
 
@@ -64,7 +63,6 @@ Force rebuild, skipping some safety checks. Modifies the original item in place;
 
 ## Vars helpers
 
-> Requires plugin version **3.11.14+**.
 
 Convenience wrappers around the underlying `ItemTag` deep-path methods, scoped to the item's persisted vars (`sertraline_data` compound). Keys support "." nesting, e.g. `"count"` → `sertraline_data.count`, `"foo.bar"` → `sertraline_data.foo.bar`.
 

@@ -4,6 +4,12 @@
 
 All synchronous API methods that touch player inventory/data must be called from the player's thread (the main thread or the region thread).
 
+## Multi-source item API
+
+SertralineItemAPI provides lookup, construction, and registration through AbstractSItem. References accept id, minecraft::id, or provider::id. Sertraline.api() also exposes inventory, rebuild, manager, and template operations.
+
+Registry writes and single-file loads run after configuration reload completes. Candidate event handlers write through the LoadContext supplied on the event.
+
 ---
 
 ## Enums
@@ -36,11 +42,15 @@ Item sub-manager type:
 
 ### getItem
 
+Deprecated compatibility method. Use SertralineItemAPI.getItem.
+
 Get a Sertraline item object (`ModernSItem`); returns `null` if not registered.
 
 `getItem(id: String): ModernSItem?`
 
 ### getAllItems
+
+Deprecated compatibility method. Use SertralineItemAPI.getAllItems.
 
 Get all registered public items as a `Map<ID, ModernSItem>`.
 
@@ -68,6 +78,8 @@ Get an item's Sertraline ID; returns `null` for non-Sertraline items.
 `getId(itemStack: ItemStack): String?`
 
 ### getVal
+
+Deprecated compatibility method. Use AbstractSItem.getDeepData("sertraline:vals").
 
 Read a val value from a Sertraline item object (`sertraline:vals`); returns `null` if the key does not exist.
 
@@ -191,6 +203,8 @@ Create a public item.
 
 ### getPublicItem
 
+Deprecated compatibility method. Use SertralineItemAPI.getItem.
+
 Get a public item (reads from the persistent manager by default).
 
 `getPublicItem(id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
@@ -202,6 +216,8 @@ Delete a public item; returns whether the deletion succeeded.
 `deletePublicItem(id: String, sub: SubManagerType): Boolean`
 
 ### getAllPublicItems
+
+Deprecated compatibility method. Use SertralineItemAPI.getAllItems.
 
 Get all public items of the given sub-type.
 
@@ -215,6 +231,8 @@ Create a private item for the given UUID.
 
 ### getPrivateItem
 
+Deprecated compatibility method. Use the private manager to read private scope.
+
 Get a private item for the given UUID (reads from the persistent manager by default).
 
 `getPrivateItem(uuid: String, id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
@@ -227,11 +245,15 @@ Delete a private item for the given UUID.
 
 ### getAllPrivateItems
 
+Deprecated compatibility method. Use the private manager to read private scope.
+
 Get all private items of the given UUID and sub-type.
 
 `getAllPrivateItems(uuid: String, sub: SubManagerType): Map<String, ModernSItem>`
 
 ### updateSItem (private items)
+
+Deprecated compatibility method. Use the private manager for private items.
 
 Update a private item for the given UUID. Persistent updates are also written to the database; returns the previous item, or `null` when the ID was not registered.
 
@@ -243,11 +265,15 @@ The item's `ModernSItem.key` can also be used as the ID:
 
 ### registerItem
 
+Deprecated compatibility method. Use SertralineItemAPI.register.
+
 Register an item directly into `itemMap` (public-persistent).
 
 `registerItem(id: String, item: ModernSItem): Unit`
 
 ### updateSItem
+
+Deprecated compatibility method. Use SertralineItemAPI.update.
 
 Update a public item directly in `itemMap`. Returns the replaced item, or `null` when the ID was not previously registered.
 
@@ -259,13 +285,15 @@ The item's `ModernSItem.key` can also be used as the ID:
 
 ### unregisterItem
 
+Deprecated compatibility method. Use SertralineItemAPI.unregister.
+
 Remove an item from `itemMap`; returns the removed item (`null` if not found).
 
 `unregisterItem(id: String): ModernSItem?`
 
 ### getItemCount
 
-Get the total item count in `itemMap`.
+Counts registered items from Sertraline, Minecraft, and external providers.
 
 `getItemCount(): Int`
 

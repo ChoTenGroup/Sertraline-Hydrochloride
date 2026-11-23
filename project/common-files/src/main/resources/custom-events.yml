@@ -1,3 +1,5 @@
+# 默认不注册自定义事件。取消注释下方完整示例即可启用。
+# Custom events are disabled by default. Uncomment a complete example below to enable it.
 # 自定义事件监听配置
 # Custom event listener configuration
 # 让物品动作可以监听任意 Bukkit 事件，而不仅限于内置的 onClick / onConsume 等触发。

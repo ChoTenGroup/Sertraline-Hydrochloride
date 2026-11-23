@@ -37,7 +37,6 @@ SLOT:
     - chest
     - legs
     - feet
-    - head
     - body
 DAMAGE_REDUCTION:
   provider: LIST
@@ -143,8 +142,8 @@ ENCHANTMENTS:
   valueType: INT
   element:
     - sweeping_edge
-    - aqua_affinity 
-    - depth_strider 
+    - aqua_affinity
+    - depth_strider
     - respiration
     - lure
     - fire_aspect
@@ -165,9 +164,9 @@ ENCHANTMENTS:
     - piercing
     - riptide
     - infinity
-    - loyalty 
-    - binding_curse 
-    - vanishing_curse 
+    - loyalty
+    - binding_curse
+    - vanishing_curse
     - protection
     - blast_protection
     - fire_protection
@@ -185,7 +184,7 @@ ENCHANTMENTS:
     - density
     - wind_burst
     - (VER:>=12111)lunge
-  
+
 EATING_ANIMATION:
   provider: ENUM
   element:
@@ -200,7 +199,7 @@ EATING_ANIMATION:
     - trident
     - spyglass
     - toot_horn
-    - (ver:>12104)bundle
+    - (VER:>12104)bundle
 NAMESPACEID:
   provider: NAMESPACEID
 PATTERN_TAG:
@@ -213,7 +212,7 @@ DAMAGE_TAG:
   provider: ENUM
   element:
     - always_hurts_ender_dragons
-    - always_kills_armor_standsp
+    - always_kills_armor_stands
     - always_most_significant_fall
     - always_triggers_silverfish
     - avoids_guardian_thorns
@@ -223,7 +222,7 @@ DAMAGE_TAG:
     - bypasses_cooldown
     - bypasses_effects
     - bypasses_enchantments
-    - bypasses_invulnerabilit
+    - bypasses_invulnerability
     - bypasses_resistance
     - bypasses_shield
     - bypasses_wolf_armor
@@ -304,3 +303,9 @@ SOUND:
   provider: SOUND
 RECIPE:
   provider: RECIPE
+ANY:
+  provider: ANY
+MAP:
+  provider: MAP
+SECTION:
+  provider: MAP

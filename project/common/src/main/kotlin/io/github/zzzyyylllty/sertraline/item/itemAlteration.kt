@@ -135,8 +135,11 @@ data class RecordedAlteration(
 )
 
 /** Reads persisted instance alteration records from the item's NBT ([ALTERATION_TAG], including the persisted marker). */
-fun readAlterationRecordsFromNBT(itemStack: ItemStack): List<RecordedAlteration> {
-    val compound = itemStack.getItemTag(true)[ALTERATION_TAG]?.asCompound() ?: return emptyList()
+fun readAlterationRecordsFromNBT(itemStack: ItemStack): List<RecordedAlteration> =
+    readAlterationRecords(itemStack.getItemTag(true))
+
+internal fun readAlterationRecords(tag: ItemTag): List<RecordedAlteration> {
+    val compound = tag[ALTERATION_TAG]?.asCompound() ?: return emptyList()
     return compound.entries.mapNotNull { (nbtKey, data) ->
         try {
             val map = data.parseMapNBT()
@@ -298,11 +301,16 @@ fun ItemStack.removeItemAlteration(name: String) {
  *
  * @return The complete record list to write back to NBT.
  */
-fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): List<RecordedAlteration> {
+fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): List<RecordedAlteration> =
+    applyAlterationsFromTag(template, rebuild?.getItemTag(true))
+
+internal fun applyAlterationsFromTag(template: AbstractSItem, rebuild: ItemTag?): List<RecordedAlteration> {
     val templateAlterations = parseAlterations(template.getDeepData(ALTERATION_DATA_KEY))
     val templateNames = templateAlterations.mapTo(HashSet()) { it.name }
-    val records = rebuild?.let { readAlterationRecordsFromNBT(it) } ?: emptyList()
+    val records = rebuild?.let(::readAlterationRecords) ?: emptyList()
 
+    val root = rebuild?.get("sertraline_data")
+    val variables by lazy { root?.let { runCatching { it.parseMapNBT() }.getOrNull() } }
     val applied = mutableListOf<SDataAlteration>()
     applied += templateAlterations
 
@@ -319,8 +327,13 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
                 // the modified vars to sertraline_data, making the effect permanent after this build.
                 // Save the pre-change snapshot so gem socket reordering can revert and replay it.
                 outRecords += if (alteration.isPersistentTarget()) {
-                    val (previousPresent, previous) = readPersistentTargetState(rebuild, alteration.key)
-                    val previousParent = readPersistentParentState(rebuild, alteration.key)
+                    val remainder = persistentVariablePath(alteration.key).orEmpty()
+                    val (previousPresent, previous) = persistentTargetState(root, variables, remainder)
+                    val previousParent = when {
+                        remainder.isEmpty() -> null
+                        root != null && variables == null -> PersistentParentSnapshot("", true, root.parseNBT())
+                        else -> capturePersistentParentSnapshot(variables, remainder)
+                    }
                     record.copy(
                         persisted = true,
                         previous = previous,
@@ -349,22 +362,23 @@ fun applyAlterationsToTemplate(template: AbstractSItem, rebuild: ItemStack?): Li
  * Used to record the target value before folding an alteration. Returns null if the target does not exist.
  */
 fun readPersistentTargetValue(itemStack: ItemStack?, key: String): Any? {
-    return readPersistentTargetState(itemStack, key).second
+    val remainder = persistentVariablePath(key) ?: return null
+    val root = itemStack?.getItemTag(true)?.get("sertraline_data") ?: return null
+    val variables = runCatching { root.parseMapNBT() }.getOrNull()
+    return persistentTargetState(root, variables, remainder).second
 }
 
-private fun readPersistentTargetState(itemStack: ItemStack?, key: String): Pair<Boolean, Any?> {
-    if (itemStack == null) return false to null
+private fun persistentVariablePath(key: String): String? {
     val prefix = PERSISTENT_ALTERATION_PREFIXES.firstOrNull {
         key == it || key.startsWith("$it.") || key.startsWith("$it:")
-    } ?: return false to null
-    val remainder = key.removePrefix(prefix).removePrefix(".").removePrefix(":")
-    val tagName = when (prefix) {
-        "sertraline:vars" -> "sertraline_data"
-        else -> return false to null
-    }
-    val root = itemStack.getItemTag(true)[tagName] ?: return false to null
+    } ?: return null
+    return key.removePrefix(prefix).removePrefix(".").removePrefix(":")
+}
+
+private fun persistentTargetState(root: taboolib.module.nms.ItemTagData?, variables: Map<String, Any?>?, remainder: String): Pair<Boolean, Any?> {
+    if (root == null) return false to null
     if (remainder.isEmpty()) return true to root.parseNBT()
-    val data = runCatching { root.parseMapNBT() }.getOrNull() ?: return false to null
+    val data = variables ?: return false to null
     var current: Any? = data
     val segments = remainder.split(".")
     for (segment in segments.dropLast(1)) {
@@ -419,23 +433,6 @@ internal fun restorePersistentMapNode(
     val leaf = segments.last()
     if (present && value != null) node[leaf] = transferBooleanToByte(value)
     else node.remove(leaf)
-}
-
-private fun readPersistentParentState(itemStack: ItemStack?, key: String): PersistentParentSnapshot? {
-    val prefix = PERSISTENT_ALTERATION_PREFIXES.firstOrNull {
-        key == it || key.startsWith("$it.") || key.startsWith("$it:")
-    } ?: return null
-    val remainder = key.removePrefix(prefix).removePrefix(".").removePrefix(":")
-    if (remainder.isEmpty()) return null
-    val tagName = when (prefix) {
-        "sertraline:vars" -> "sertraline_data"
-        else -> return null
-    }
-    val root = itemStack?.getItemTag(true)?.get(tagName)
-    if (root == null) return capturePersistentParentSnapshot(null, remainder)
-    val variables = runCatching { root.parseMapNBT() }.getOrNull()
-        ?: return PersistentParentSnapshot("", true, root.parseNBT())
-    return capturePersistentParentSnapshot(variables, remainder)
 }
 
 /**

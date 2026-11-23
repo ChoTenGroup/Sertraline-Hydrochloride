@@ -1,7 +1,9 @@
 package io.github.zzzyyylllty.sertraline.config.common
 
 import io.github.zzzyyylllty.sertraline.logger.severeL
-import taboolib.library.configuration.ConfigurationSection
+import java.io.File
+import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
+import taboolib.common.platform.function.getDataFolder
 import taboolib.module.configuration.Configuration
 
 /**
@@ -16,7 +18,25 @@ import taboolib.module.configuration.Configuration
  */
 object ConfigReloadGuard {
 
+    fun prepare(fileName: String): Configuration = parse(File(getDataFolder(), fileName))
+
+    internal fun parse(file: File): Configuration {
+        try {
+            val text = file.bufferedReader().use { it.readText() }.removePrefix("\uFEFF")
+            if (text.lineSequence().any { it.isNotBlank() && !it.trimStart().startsWith('#') }) {
+                requireNotNull(parseToMap(text, "yaml")) { "Expected a configuration mapping" }
+            }
+            return Configuration.loadFromFile(file)
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Could not read ${file.name}: ${e.message}", e)
+        }
+    }
+
     fun reloadSafely(config: Configuration, fileName: String) {
+        tryReload(config, fileName)
+    }
+
+    internal fun tryReload(config: Configuration, fileName: String): Boolean {
         val snapshot = try {
             config.saveToString()
         } catch (_: Exception) {
@@ -24,6 +44,7 @@ object ConfigReloadGuard {
         }
         try {
             config.reload()
+            return true
         } catch (e: Exception) {
             severeL("Config_Load_Error_Parse", fileName, e.message ?: "Unknown error")
             if (snapshot != null) {
@@ -35,5 +56,6 @@ object ConfigReloadGuard {
                 }
             }
         }
+        return false
     }
 }

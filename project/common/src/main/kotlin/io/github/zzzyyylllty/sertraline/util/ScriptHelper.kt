@@ -125,6 +125,8 @@ object ScriptHelper {
     /**
      * Get the names of all loaded scripts
      */
+    internal fun clearScripts() = scriptCache.clear()
+
     fun getScriptNames(): Set<String> = scriptCache.keys.toSet()
 
     /**

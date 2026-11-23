@@ -1,10 +1,14 @@
 basic_melee_weapon:
   xbuilder:
-    material: IRON_SWORD
+    # 必须用 %{material?...}：模板参数只做占位符替换，写死材质会让调用方的 material 参数被静默丢弃
+    # Must be %{material?...}: arguments only substitute placeholders, a literal here silently discards the
+    # caller's `material` argument (every weapon tier used to end up as IRON_SWORD).
+    material: "%{material?:IRON_SWORD}"
     name: "%{name?:Unnamed Weapon}"
+    # 固定一行占位 lore。不要再加 `- "%{lore_line2?:}"`：空默认值会在每件武器上留下一行空白 lore。
+    # Single placeholder lore line. Do not add `- "%{lore_line2?:}"`: an empty default renders a blank lore line.
     lore:
       - "%{lore_line1?:<gray>A simple weapon.}"
-      - "%{lore_line2?:}"
     unbreakable: true
     attributes:
       ATTACK_DAMAGE:
@@ -93,3 +97,17 @@ basic_consumable:
     name: "%{name?:Unnamed Item}"
     lore:
       - "%{lore_line?:}"
+
+# Shared transformer branches on the workspace item ID.
+guardian_weapon:
+  $template:
+    use: basic_melee_weapon
+    arguments:
+      name:
+        $t:
+          type: when
+          source: "%{_ID}"
+          when:
+            guardian_sword: "&2Wild Guardian"
+            forest_guardian_sword: "&aForest Guardian"
+          fallback: "Guardian"

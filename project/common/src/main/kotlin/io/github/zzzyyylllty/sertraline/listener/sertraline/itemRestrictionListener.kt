@@ -4,7 +4,7 @@ import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.Sertraline.itemMap
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
-import net.kyori.adventure.text.minimessage.MiniMessage
+import io.github.zzzyyylllty.sertraline.util.minimessage.toComponent
 import org.bukkit.Keyed
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -73,7 +73,7 @@ private fun shouldBlock(mode: RestrictMode, isVanilla: Boolean): Boolean {
 internal fun sendBlockMessage(player: Player, key: String) {
     val msg = SertralineSettings.rawString("messages.common.$key", "")
     if (!msg.isNullOrEmpty()) {
-        PlatformCompat.sendComponent(player, MiniMessage.miniMessage().deserialize(msg))
+        PlatformCompat.sendComponent(player, msg.toComponent())
     }
 }
 

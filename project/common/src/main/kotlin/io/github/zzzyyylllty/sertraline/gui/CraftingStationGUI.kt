@@ -19,13 +19,11 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import taboolib.common.platform.service.PlatformExecutor.PlatformTask
 import taboolib.common.platform.function.submit
-import taboolib.common.platform.function.submitAsync
 import taboolib.module.ui.openMenu
 import taboolib.module.ui.type.Chest
 import taboolib.platform.util.giveItem
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
+import java.util.UUID
+import org.bukkit.Bukkit
 
 /**
  * Crafting station GUI manager.
@@ -34,10 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
 object CraftingStationManager {
 
     /** Active crafting sessions: playerId → CraftingSession */
-    private val activeSessions = ConcurrentHashMap<String, CraftingSession>()
-
-    /** Unique session token generator */
-    private val nextSessionToken = AtomicLong(0)
+    private val activeSessions = HashMap<String, CraftingSession>()
 
     /** Cached JSR 223 JavaScript engine (lazily initialized, avoids repeated getEngineByName overhead) */
     private val jsEngine: javax.script.ScriptEngine? by lazy {
@@ -63,18 +58,11 @@ object CraftingStationManager {
         // Check for an existing crafting session
         val oldSession = activeSessions[player.uniqueId.toString()]
         if (oldSession != null) {
-            val oldRecipe = station.recipes.values.find { it.displayName == oldSession.recipeId }
-            val cancellable = oldRecipe?.options?.get("cancellable") as? Boolean ?: true
-            if (!cancellable) {
+            if (oldSession.recipe.options["cancellable"] == false) {
                 PlatformCompat.sendComponent(player, "<yellow>Current craft cannot be cancelled!</yellow>".toComponent())
                 return
             }
-            // Cancel the old session and return the consumed materials
-            activeSessions.remove(player.uniqueId.toString())
-            oldSession.itemsReturned.set(true)
-            oldSession.cancel() // Cancel the scheduled task to prevent duplicate output after delayed execution
-            CraftingStationDataManager.clearSession(player)
-            returnConsumedItems(player, oldSession)
+            if (!cancelAndRefund(player, oldSession)) return
         }
 
         val display = station.display
@@ -328,80 +316,45 @@ object CraftingStationManager {
             return
         }
 
-        // Parse the crafting time
-        val timeSeconds = try {
-            recipe.time.evalKetherString(player)?.toDoubleOrNull() ?: 0.0
-        } catch (_: Exception) {
-            try { recipe.time.toDouble() } catch (_: Exception) { 0.0 }
+        val timeSeconds = (runCatching { recipe.time.evalKetherString(player)?.toDoubleOrNull() }.getOrNull()
+            ?: recipe.time.toDoubleOrNull() ?: 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0
+        val timeTicks = (timeSeconds * 20).toLong().coerceIn(1, Int.MAX_VALUE.toLong())
+        val recipeId = station.recipes.entries.firstOrNull { it.value === recipe }?.key ?: recipe.displayName
+        val saved = CraftingStationDataManager.saveSession(
+            player, stationId, recipeId, System.currentTimeMillis(), timeSeconds, consumed.map { it.item }
+        )
+        if (!saved) {
+            returnConsumedItems(player, consumed)
+            return
         }
-        val timeTicks = (timeSeconds * 20).toInt().coerceAtLeast(1)
 
-        // Execute onStart agents (recipe level → station level)
-        fireRecipeAgents(recipe, "onStart", player)
-        fireStationAgents(station, recipe, "onStart", player)
-
-        // Cancel flag + session token
-        val itemsReturned = AtomicBoolean(false)
-        val sessionToken = nextSessionToken.incrementAndGet()
-
-        // Use a scheduled delay instead of Thread.sleep() to avoid occupying pool threads
-        val task = submit(async = true, delay = timeTicks.toLong()) {
-            // Check whether the session was cancelled (openStation / cancelAll already handled the refund)
-            val currentSession = activeSessions[sessionKey]
-            if (currentSession == null || currentSession.sessionToken != sessionToken) {
+        val session = CraftingSession(recipe, consumed)
+        activeSessions[sessionKey] = session
+        session.task = submit(delay = timeTicks) {
+            if (activeSessions[sessionKey] !== session) return@submit
+            if (!player.isOnline) {
+                activeSessions.remove(sessionKey)
                 return@submit
             }
-
-            // Remove the session to prevent duplicate processing
-            activeSessions.remove(sessionKey, currentSession)
-
-            // Grant output items (must run on the main thread)
-            submit(async = false) {
-                // The player may have disconnected during the crafting delay. Without this check the
-                // outputs, the completion message and the lifecycle agents all ran against an
-                // offline Player — items vanished and `onClaim` scripts ran on a stale entity.
-                if (!player.isOnline) {
-                    CraftingStationDataManager.clearSession(player)
-                    return@submit
-                }
-                try {
-                    for (output in recipe.outputs) {
-                        val outputStack = output.build(player)
-                        player.giveItem(outputStack)
+            val outputs = try {
+                recipe.outputs.map { output ->
+                    output.build(player).also { stack ->
+                        require(stack.type != org.bukkit.Material.AIR && stack.amount > 0) { "Crafting output is empty" }
                     }
-
-                    fireRecipeAgents(recipe, "onClaim", player)
-                    fireStationAgents(station, recipe, "onClaim", player)
-
-                    val msg = SertralineSettings.msgCraftingComplete
-                    PlatformCompat.sendComponent(player, msg.toComponent())
-                } finally {
-                    CraftingStationDataManager.clearSession(player)
                 }
+            } catch (e: Exception) {
+                severeS("Failed to build crafting outputs for $sessionKey: ${e.message}")
+                cancelAndRefund(player, session)
+                return@submit
             }
+            if (!CraftingStationDataManager.clearSession(player)) return@submit
+            activeSessions.remove(sessionKey)
+            outputs.forEach { player.giveItem(it) }
+            fireLifecycleAgents(station, recipe, "onClaim", player)
+            PlatformCompat.sendComponent(player, SertralineSettings.msgCraftingComplete.toComponent())
         }
 
-        activeSessions[sessionKey] = CraftingSession(
-            playerId = sessionKey,
-            sessionToken = sessionToken,
-            stationId = stationId,
-            recipeId = recipe.displayName,
-            totalTicks = timeTicks,
-            task = task,
-            consumedItems = consumed.toMutableList(),
-            itemsReturned = itemsReturned
-        )
-
-        // Persist the crafting session to the database
-        val startTime = System.currentTimeMillis()
-        CraftingStationDataManager.saveSession(
-            player = player,
-            stationId = stationId,
-            recipeId = recipe.displayName,
-            startTime = startTime,
-            totalSeconds = timeSeconds,
-            consumedItems = consumed.map { it.item }
-        )
+        fireLifecycleAgents(station, recipe, "onStart", player)
 
         val msg = SertralineSettings.msgCraftingStarted
         PlatformCompat.sendComponent(player, msg.replace("{time}", "%.1f".format(timeSeconds)).toComponent())
@@ -510,14 +463,6 @@ object CraftingStationManager {
         }
     }
 
-    /**
-     * Return the consumed items from the old session (called when cancelling the old craft).
-     */
-    private fun returnConsumedItems(player: Player, session: CraftingSession) {
-        if (!player.isOnline) return
-        returnConsumedItems(player, session.consumedItems, session.recipeId)
-    }
-
     // ==================== Agent Execution ====================
 
     /**
@@ -554,7 +499,7 @@ object CraftingStationManager {
     }
 
     private fun executeAgentScript(key: String, script: String, player: Player, vars: Map<String, Any?>) {
-        submitAsync {
+        val execute = {
             try {
                 val trimmed = script.trimStart()
                 when {
@@ -586,84 +531,47 @@ object CraftingStationManager {
                 severeS("CraftingStation agent '$key' execution failed: ${e.message}")
             }
         }
+        if (Bukkit.isPrimaryThread()) execute() else submit { execute() }
     }
 
-    // ==================== Crafting Session ====================
-
-    data class CraftingSession(
-        val playerId: String,
-        val sessionToken: Long,
-        val stationId: String,
-        val recipeId: String,
-        val totalTicks: Int,
-        private val task: PlatformTask,
-        val consumedItems: MutableList<ConsumedItem> = mutableListOf(),
-        /** Flag indicating the items were cancelled/returned, preventing the async task from returning them twice */
-        val itemsReturned: AtomicBoolean = AtomicBoolean(false)
+    private class CraftingSession(
+        val recipe: StationRecipe,
+        val consumedItems: List<ConsumedItem>,
     ) {
+        var task: PlatformTask? = null
+
         fun cancel() {
-            task.cancel()
+            task?.cancel()
         }
     }
 
-    /** Cancel all online crafting sessions and return items (used on reload) */
-    fun cancelAll() {
-        // NOT necessarily on the main thread: reload runs its publish phase inside an async
-        // `runReload`, so this method may be called off-thread. `activeSessions` is a
-        // ConcurrentHashMap, so snapshot+clear is safe from any thread, and the world/DB work below
-        // is explicitly hopped to the main thread via callSyncMethod. (The previous comment claimed
-        // this method already ran on the main thread, which was wrong — and it made the `if
-        // (isPrimaryThread())` branch below look like dead code.)
-        val snapshot = HashMap(activeSessions)
-        activeSessions.clear()
-
-        val onlinePlayers = mutableMapOf<String, CraftingSession>()
-        for ((_, session) in snapshot) {
-            session.cancel()
-            val player = org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(session.playerId))
-            if (player != null) {
-                onlinePlayers[session.playerId] = session
-            }
-            // Offline players: keep the DB data; restoreSession handles it on join
-        }
-
-        if (onlinePlayers.isEmpty()) return
-
-        // Synchronously return items + clear the DB, blocking until done. Prevents a race between the subsequent craftingStations.clear() and restoreSession.
-        try {
-            val plugin = org.bukkit.Bukkit.getPluginManager().getPlugin("Sertraline")
-            if (plugin != null) {
-                val returnItems = java.util.concurrent.Callable {
-                    for ((playerId, session) in onlinePlayers) {
-                        val player = org.bukkit.Bukkit.getPlayer(java.util.UUID.fromString(playerId))
-                        if (player != null) {
-                            returnConsumedItems(player, session)
-                            CraftingStationDataManager.clearSession(player)
-                        }
-                    }
-                    null
-                }
-                if (org.bukkit.Bukkit.isPrimaryThread()) {
-                    returnItems.call()
-                } else {
-                    org.bukkit.Bukkit.getScheduler().callSyncMethod(plugin, returnItems).get()
-                }
-            }
-        } catch (e: Exception) {
-            severeS("Failed to synchronously cancel crafting sessions: ${e.message}")
-        }
-    }
-
-    /** Shut down all crafting tasks without clearing persisted data (used on server shutdown) */
-    fun shutdownAll() {
-        val snapshot = HashMap(activeSessions)
-        activeSessions.clear()
-        snapshot.values.forEach { it.cancel() }
-    }
-
-    /** Cancel a specific player's crafting session (called when the player disconnects) */
-    fun cancelPlayerSession(playerId: String) {
-        val session = activeSessions.remove(playerId) ?: return
+    private fun cancelAndRefund(player: Player, session: CraftingSession): Boolean {
+        val key = player.uniqueId.toString()
+        if (activeSessions[key] !== session || !player.isOnline) return false
+        if (!CraftingStationDataManager.clearSession(player)) return false
+        activeSessions.remove(key)
         session.cancel()
+        returnConsumedItems(player, session.consumedItems, session.recipe.displayName)
+        return true
+    }
+
+    /** Cancels active sessions and refunds online players on the server thread. */
+    fun cancelAll() {
+        check(Bukkit.isPrimaryThread())
+        for ((id, session) in activeSessions.toMap()) {
+            val player = Bukkit.getPlayer(UUID.fromString(id))
+            if (player != null) cancelAndRefund(player, session)
+            else cancelPlayerSession(id)
+        }
+    }
+
+    /** Cancels timers while retaining the persisted sessions for recovery. */
+    fun shutdownAll() {
+        activeSessions.values.forEach { it.cancel() }
+        activeSessions.clear()
+    }
+
+    fun cancelPlayerSession(playerId: String) {
+        activeSessions.remove(playerId)?.cancel()
     }
 }

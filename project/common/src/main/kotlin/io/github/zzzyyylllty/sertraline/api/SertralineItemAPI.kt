@@ -1,5 +1,7 @@
 package io.github.zzzyyylllty.sertraline.api
 
+import io.github.zzzyyylllty.sertraline.logger.ReloadCoordinator
+
 import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.data.ExternalPluginSItem
@@ -78,7 +80,7 @@ public object SertralineItemAPI {
      * When [id] is supplied explicitly, the caller is responsible for avoiding conflicts with other entries.
      */
     public fun register(item: AbstractSItem, id: String = item.storageKey) {
-        val previous = Sertraline.itemMap.put(id, item)
+        val previous = ReloadCoordinator.liveMutation { Sertraline.itemMap.put(id, item) }
         if (previous != null && previous !== item) {
             warningS(
                 "[SertralineItemAPI] Registered item '$id' overwrote an existing entry " +
@@ -89,11 +91,11 @@ public object SertralineItemAPI {
 
     /** Updates a registered item and returns the item it replaced. */
     public fun update(id: String, item: AbstractSItem): AbstractSItem? =
-        Sertraline.itemMap.put(id, item)
+        ReloadCoordinator.liveMutation { Sertraline.itemMap.put(id, item) }
 
     /** Removes an item and returns the removed item. */
     public fun unregister(id: String): AbstractSItem? =
-        Sertraline.itemMap.remove(id)
+        ReloadCoordinator.liveMutation { Sertraline.itemMap.remove(id) }
 
     /** The number of currently registered items. */
     public fun getItemCount(): Int = Sertraline.itemMap.size

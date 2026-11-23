@@ -8,19 +8,16 @@ import taboolib.common.platform.function.getDataFolder
 import taboolib.common.platform.function.releaseResourceFile
 import java.io.File
 
-private const val DEFAULT_ATTRIBUTE_FILE_PATTERN = "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$"
-
 /** Load, validate, then publish. */
 fun loadAttributeFiles(context: LoadContext? = null) {
-    val regex = Regex(SertralineSettings.rawString("file-load.attribute", DEFAULT_ATTRIBUTE_FILE_PATTERN))
+    val regex = SertralineSettings.fileLoadAttribute
     val folder = File(getDataFolder(), "attributes")
     if (!folder.exists()) releaseResourceFile("attributes/default.yml")
     val types = linkedMapOf<String, AttributeType>()
     val operations = linkedMapOf<String, AttributeExpression>()
     for (file in safeWalkDirectory(folder, maxDepth = 10) { it.isFile && regex.matches(it.name) }.sortedBy { it.path }) {
         try {
-            if (file.readLines().none { it.isNotBlank() && !it.trimStart().startsWith('#') }) continue
-            val raw = multiExtensionLoader(file) ?: error("Unreadable file")
+            val raw = multiExtensionLoader(file, context) ?: continue
             val map = TemplateManager.resolveInMap(raw, context)
             require(map["attribute_operations"] == null || map["attribute_operations"] is Map<*, *>) { "Invalid attribute_operations" }
             val opNodes = map["attribute_operations"] as? Map<*, *> ?: emptyMap<Any, Any>()

@@ -7,7 +7,7 @@ import io.github.zzzyyylllty.sertraline.event.SertralineMappingFileLoadPostEvent
 import io.github.zzzyyylllty.sertraline.event.SertralineMappingFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.warningL
-import org.yaml.snakeyaml.Yaml
+import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
 import taboolib.common.platform.function.getDataFolder
 import taboolib.common.platform.function.releaseResourceFile
 import taboolib.common.platform.function.warning
@@ -72,9 +72,7 @@ private fun mergePackagedDefaultMappings(context: LoadContext? = null) {
         devLog("Packaged mappings resource not readable, skipping default merge.")
         return
     }
-    // `load(text) as? Map` instead of `load<Map<..>>(text)`: the legacy12 compile surface ships an
-    // older SnakeYAML whose `load(String)` is not generic, so an explicit type argument fails there.
-    val parsed = runCatching { Yaml().load(text) as? Map<*, *> }.getOrNull() ?: return
+    val parsed = parseToMap(text, "yaml") ?: return
 
     var addedKeys = 0
     var addedValues = 0
@@ -126,7 +124,7 @@ fun loadMappingFile(file: File, regex: Regex, context: LoadContext? = null) {
         devLog("${file.name} not match regex, skipping...")
         return
     }
-    val raw = multiExtensionLoader(file) ?: return
+    val raw = multiExtensionLoader(file, context) ?: return
     val map = TemplateManager.resolveInMap(raw, context)
     for ((key, value) in map) {
         val listValue = value as? List<*> ?: continue

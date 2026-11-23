@@ -10,7 +10,7 @@ taboolib { subproject = true }
 //   spigot source set = Spigot implementation (PlatformCompat, pure Bukkit API, zero reflection)
 // The two PlatformCompat classes share the same name and signature; exactly one is packed, never both in one jar.
 // legacy12 builds with jvmTarget=8 while paper-api requires JVM 21, so its variant cannot resolve and the paper source set is not created at all.
-val hasPaperSourceSet = platform != "legacy12"
+val hasPaperSourceSet = platform == "paper"
 
 sourceSets {
     if (hasPaperSourceSet) {
@@ -20,8 +20,12 @@ sourceSets {
 }
 
 dependencies {
+    testImplementation(rootProject.libs.junit)
+    testImplementation(sourceSets["spigot"].output)
+
     // main source set (PaperEventHooks) uses only Bukkit types
-    compileOnly("ink.ptms.core:v12104:12104:universal")
+    if (platform == "legacy12") compileOnly("ink.ptms.core:v11200:11200")
+    else compileOnly("ink.ptms.core:v12104:12104:universal")
 
     // paper source set: paper-api + main common classes
     if (hasPaperSourceSet) {
@@ -47,12 +51,8 @@ dependencies {
 }
 
 configurations {
-    // the paper-api injected by the root allprojects is only visible to the paper source set; excluded everywhere else
-    getByName("compileOnly") {
-        exclude(group = "io.papermc.paper", module = "paper-api")
-    }
-    getByName("spigotCompileOnly") {
-        exclude(group = "io.papermc.paper", module = "paper-api")
+    testImplementation {
+        extendsFrom(getByName("spigotCompileOnly"))
     }
     create("paperOutput")
     create("spigotOutput")

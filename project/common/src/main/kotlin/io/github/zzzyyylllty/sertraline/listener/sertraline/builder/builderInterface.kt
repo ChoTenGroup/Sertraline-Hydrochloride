@@ -12,9 +12,11 @@ fun interface ItemProcessor {
 }
 
 class ItemProcessorManager {
+    private data class RegisteredProcessor(val processor: ItemProcessor, val forced: Boolean)
+
     // Publish immutable ordered snapshots so reload registration cannot race item builds.
     @Volatile
-    private var processors: Map<String, ItemProcessor> = emptyMap()
+    private var processors: Map<String, RegisteredProcessor> = emptyMap()
     private val mutationLock = Any()
 
     /** Processor names already reported as binary-incompatible (warn once, not per build). */
@@ -22,8 +24,8 @@ class ItemProcessorManager {
 
     // Register a processor by name as the key, for easier management
     fun registerProcessor(name: String, processor: ItemProcessor) {
-        if (SertralineSettings.rawBoolean("modules.$name.feature", true)) synchronized(mutationLock) {
-            processors = LinkedHashMap(processors).apply { put(name, processor) }
+        synchronized(mutationLock) {
+            processors = LinkedHashMap(processors).apply { put(name, RegisteredProcessor(processor, false)) }
         }
     }
 
@@ -35,7 +37,7 @@ class ItemProcessorManager {
      */
     fun forceRegisterProcessor(name: String, processor: ItemProcessor) {
         synchronized(mutationLock) {
-            processors = LinkedHashMap(processors).apply { put(name, processor) }
+            processors = LinkedHashMap(processors).apply { put(name, RegisteredProcessor(processor, true)) }
         }
     }
 
@@ -64,10 +66,12 @@ class ItemProcessorManager {
     fun processItem(item: AbstractSItem, itemStack: ItemStack, player: Player?): ItemStack {
         if (!item.shouldAdapt) return itemStack
         var currentItem = itemStack
+        val settings = SertralineSettings.currentSnapshot()
         for (processor in processors.entries) {
             if (!item.config.contains(processor.key)) continue
+            if (!processor.value.forced && !settings.rawBoolean("modules.${processor.key}.feature", true)) continue
             currentItem = try {
-                processor.value.process(item, currentItem, player)
+                processor.value.processor.process(item, currentItem, player)
             } catch (e: AbstractMethodError) {
                 // ItemProcessor.process() changed parameter type from ModernSItem to AbstractSItem
                 // when multi-source items were introduced. A third-party processor compiled against

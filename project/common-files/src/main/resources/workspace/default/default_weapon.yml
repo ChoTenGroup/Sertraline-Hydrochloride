@@ -1,7 +1,7 @@
 sword_of_skyline:
   sertraline:
     tier: D
-    lore-format: defaultloreformat # 使用默认 Lore 格式 Use defaultloreformat
+    lore-format: loreformat # 使用默认 Lore 格式 Use loreformat
   xbuilder:
     name: "<!i>&7Sword Of &eSkyline"
     lore: |

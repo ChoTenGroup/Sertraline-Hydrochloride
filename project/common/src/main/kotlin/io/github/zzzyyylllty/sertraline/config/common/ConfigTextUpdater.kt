@@ -1,6 +1,7 @@
 package io.github.zzzyyylllty.sertraline.config.common
 
 import java.io.File
+import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
 
 /**
  * Adds missing configuration nodes by inserting text without rewriting any existing lines.
@@ -32,7 +33,8 @@ object ConfigTextUpdater {
         val missing = nodes.filter { it.path !in presentPaths }
         if (missing.isEmpty()) return 0
 
-        val original = file.readText()
+        val source = file.readText()
+        val original = source.removePrefix("\uFEFF")
         if (original.isBlank()) return 0
         // Do not guess indentation when tabs are used; skip the file.
         if (original.lineSequence().any { it.startsWith("\t") }) return 0
@@ -50,7 +52,9 @@ object ConfigTextUpdater {
         if (inserted == 0) return 0
 
         if (!text.endsWith(nl)) text += nl
-        file.writeText(text)
+        parseToMap(text, "yaml")
+        val bom = if (source.startsWith("\uFEFF")) "\uFEFF" else ""
+        file.writeConfigAtomically(bom + text, backup = true)
         return inserted
     }
 

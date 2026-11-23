@@ -1,11 +1,10 @@
 # 副手切换示例 — 切换物品显示模式（基于 InventoryClickEvent）
-# Offhand toggle sample — listen to InventoryClickEvent with SWAP_OFFHAND / HOTBAR_SWAP
+# Offhand toggle sample — listen to InventoryClickEvent with SWAP_OFFHAND
 #
 # 说明 / Notes:
 #   底层 InventoryClickEvent 覆盖了多种"交换物品"的触发方式。
 #   The lower-level InventoryClickEvent covers multiple ways to trigger an item swap:
 #     - ClickType.SWAP_OFFHAND   按下 F 键（交换主/副手） / press F (swap main/off hand)
-#     - ClickType.HOTBAR_SWAP    按数字键 1-9 交换物品到主手 / press number key 1-9 to swap to main hand
 #   async: false 保证事件在同步线程执行，setCancelled(true) 才生效。
 #   async: false keeps the script on the sync thread so setCancelled(true) takes effect.
 #

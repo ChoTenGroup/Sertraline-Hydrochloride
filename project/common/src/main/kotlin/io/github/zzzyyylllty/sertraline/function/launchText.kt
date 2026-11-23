@@ -44,7 +44,7 @@ fun launchText() {
     consoleSender.sendStringWithPrefix("<dark_aqua>",consoleSender.asLangText("WelcomeSeries"))
     consoleSender.sendStringWithPrefix("<dark_aqua>",consoleSender.asLangText("DesignBy", "<#ff66cc>AkaCandyKAngel</#ff66cc>"))
     consoleSender.sendStringWithPrefix("<dark_aqua>",consoleSender.asLangText("SpecialThanks","<aqua>[<dark_aqua>${specialThanks.joinToString("<dark_gray>, </dark_gray>")}<aqua>]"))
-    consoleSender.sendStringWithPrefix("<dark_aqua>",consoleSender.asLangText("PoweredBy", "<#66ccff>TabooLib <gold>6.2"))
+    consoleSender.sendStringWithPrefix("<dark_aqua>",consoleSender.asLangText("PoweredBy", "<#66ccff>TabooLib <gold>${io.github.zzzyyylllty.sertraline.api.BuildVersion.TABOOLIB}"))
     consoleSender.sendStringAsComponent(" ")
     consoleSender.sendStringWithPrefix("<#88ccff>", console.asLangText("Welcome1"))
     consoleSender.sendStringWithPrefix("<#88ccff>", console.asLangText("Welcome2", premiumDisplayName, "$pluginVersion<reset>", "${runningPlatform.name} - $versionId"))

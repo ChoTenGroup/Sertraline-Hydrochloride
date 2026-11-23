@@ -1,5 +1,6 @@
 # 格式: Format:
-# node: TYPE - 普通参数 (normal parameter)
+# node: TYPE
+
 # node*: TYPE - 必填参数 (required parameter)
 # 如果下列是一个列表 在前面加上(LIST) If the following is a list, prefix it with (LIST)
 # (LIST)root:
@@ -7,16 +8,12 @@
 #   2: xxc
 # = root:[{1:xxx,2:xxx},{1:xxx,2:xxx}]...
 
-# 请勿直接修改这个文件
-# 如想要添加映射请在此目录下建立更多文件添加
-# Please do not directly modify this file
-# If you want to add mappings, please create more files in this directory to add
 
 _info:
   native: 12104
   support:
     min: 12101
-    max: 12110
+    max: 12111
 minecraft:attribute_modifiers:
   amount*: DOUBLE
   (VER:<12104)show_in_tooltip: BOOLEAN
@@ -29,13 +26,13 @@ minecraft:attribute_modifiers:
   operation*: ATTRIBUTE_OPERATION
   slot: SLOT
   type*: ATTRIBUTE
-minecraft:banner_patterns:
-  color*: COLOR
+(LIST)minecraft:banner_patterns:
+  color*: DYECOLOR
   pattern*:
     - STRING
     - asset_id: STRING
       translation_key: STRING
-minecraft:base_color: STRING
+minecraft:base_color: DYECOLOR
 minecraft:bees:
   entity_data:
     id*: STRING
@@ -48,31 +45,22 @@ minecraft:block_entity_data:
 minecraft:block_state: MAP
 minecraft:blocks_attacks:
   (POSITIVE)block_delay_seconds: FLOAT
-  block_sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  block_sound: SOUND
   (VER:>=12105)bypassed_by: DAMAGE_TAG
   (LIST)damage_reductions:
     base*: FLOAT
     factor*: FLOAT
     (VER:>=12105)horizontal_blocking_angle: FLOAT
-    type: 
+    type:
       - STRING
       - LIST|STRING
   (POSITIVE)disable_cooldown_scale: FLOAT
-  disabled_sound:
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  disabled_sound: SOUND
   item_damage:
     base*: FLOAT
     factor*: FLOAT
     threshold*: FLOAT
-minecraft:break_sound:
-  - STRING
-  - sound_id*: STRING
-    range: FLOAT
+minecraft:break_sound: SOUND
 minecraft:bucket_entity_data:
   (VER:<12105)BucketVariantTag: INT
   (VER:<12105)type: STRING
@@ -93,32 +81,32 @@ minecraft:container_loot:
   seed: LONG
 (MAPLIST)minecraft:can_break:
   (VER:<12104)show_in_tooltip: BOOLEAN
-  blocks: 
+  blocks:
     - STRING
     - LIST|STRING
-  components: MAP|STRING,ANY
-  nbt: 
+  components: MAP|STRING,ANY<
+  nbt:
     - STRING
     - MAP|STRING,ANY
   predicates: ANY
   state:
     - STRING
-    - _:
+    - "*":
         min: STRING
         max: STRING
 (MAPLIST)minecraft:can_place_on:
   (VER:<12104)show_in_tooltip: BOOLEAN
-  blocks: 
+  blocks:
     - STRING
     - LIST|STRING
   components: MAP|STRING,ANY
-  nbt: 
+  nbt:
     - STRING
     - MAP|STRING,ANY
   predicates: ANY
   state:
     - STRING
-    - _:
+    - "*":
         min: STRING
         max: STRING
 (LIST)minecraft:charged_projectiles: ITEM
@@ -130,19 +118,18 @@ minecraft:consumable:
     type*: CONSUME_EFFECT_TYPE
     (OPTIONAL,LIST)effects: POTIONEFFECT
     (PERCENTAGE)probability: FLOAT
-    (OPTIONAL)sound:
-      - STRING
-      - sound_id: STRING
-        range: FLOAT
+    (OPTIONAL)sound: SOUND
     (OPTIONAL,POSITIVE)diameter: FLOAT
-minecraft:custom_data: 
+minecraft:custom_data:
   - MAP|STRING,ANY
   - (VER:>12100)STRING
 minecraft:custom_model_data:
   (LIST)flags: BOOLEAN
   (LIST)floats: FLOAT
   (LIST)strings: STRING
-  (MAPLIST)colors: INT
+  (LIST)colors:
+    - INT
+    - LIST|FLOAT
 minecraft:custom_name: TEXT
 minecraft:damage: INT
 minecraft:damage_resistant:
@@ -153,10 +140,7 @@ minecraft:debug_stick_state: MAP|BLOCK,STRING
   type*: CONSUME_EFFECT_TYPE
   (OPTIONAL,LIST)effects: POTIONEFFECT
   (PERCENTAGE)probability: FLOAT
-  (OPTIONAL)sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  (OPTIONAL)sound: SOUND
   (OPTIONAL)diameter: FLOAT
 minecraft:dyed_color:
   - INT
@@ -169,22 +153,18 @@ minecraft:entity_data:
   id: ENTITYENUM
   _: ANY
 minecraft:equippable:
-  (MAPLIST)allowed_entities: ENTITYENUM
+  allowed_entities:
+    - LIST|ENTITYENUM
+    - ENTITYENUM
   (VER:>=12104)asset_id: STRING
-  (VER:<=12103)asset_id: STRING
+  (VER:<=12103)model: STRING
   (VER:>=12102)camera_overlay: STRING
   (VER:>=12106)can_be_sheared: BOOLEAN
   (VER:>=12102)damage_on_hurt: BOOLEAN
   (VER:>12105)equip_on_interact: BOOLEAN
-  equip_sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  equip_sound: SOUND
   dispensable: BOOLEAN
-  (VER:>=12106)shearing_sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  (VER:>=12106)shearing_sound: SOUND
   slot*: SLOT
   (VER:>=12102)swappable: BOOLEAN
 minecraft:firework_explosion:
@@ -212,10 +192,7 @@ minecraft:food:
 minecraft:glider: {}
 minecraft:instrument:
   description*: TEXT
-  sound_event*:
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  sound_event*: SOUND
   range*: FLOAT
   use_duration*: INT
 minecraft:intangible_projectile: {}
@@ -229,26 +206,21 @@ minecraft:kinetic_weapon:
   (POSITIVE)delay_ticks: INT
   forward_movement: FLOAT
   damage_multiplier: FLOAT
-  sound:
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
-  hit_sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  sound: SOUND
+  hit_sound: SOUND
   dismount_conditions*: ENTITY_CONDITION
   knockback_conditions*: ENTITY_CONDITION
   damage_conditions*: ENTITY_CONDITION
 minecraft:lock: {}
 minecraft:lodestone_tracker:
-  dimension*: STRING
-  (LIST)pos*: INT
+  target:
+    dimension*: STRING
+    (LIST)pos*: INT
   tracked: BOOLEAN
 (LIST)minecraft:lore: TEXT
 minecraft:map_color: INT
 minecraft:map_decorations:
-  _:
+  "*":
     rotation*: FLOAT
     type*: STRING
     x*: DOUBLE
@@ -263,40 +235,38 @@ minecraft:piercing_weapon:
   min_reach: FLOAT
   max_reach: FLOAT
   hitbox_margin: FLOAT
-  sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
-  hit_sound: 
-    - STRING
-    - sound_id: STRING
-      range: FLOAT
+  sound: SOUND
+  hit_sound: SOUND
   deals_knockback: BOOLEAN
   dismounts: BOOLEAN
 (LIST)minecraft:pot_decorations: STRING
-(EXTRA:STRING)minecraft:potion_contents:
-  custom_color: INT
-  custom_effects: EFFECT
-  (VER:>=12102)custom_name: STRING
-  potion: STRING
+minecraft:potion_contents:
+  - STRING
+  - custom_color: INT
+    (LIST)custom_effects: EFFECT
+    (VER:>=12102)custom_name: STRING
+    potion: STRING
 minecraft:potion_duration_scale: FLOAT
-(EXTRA:STRING)minecraft:profile: 
-  id: UUID
-  name: STRING
-  properties: NOT_SUPPORT
-  cape: STRING
-  elytra: STRING
-  model: STRING
-  texture: STRING
+minecraft:profile:
+  - STRING
+  - id: UUID
+    name: STRING
+    properties: STRING
+    cape: STRING
+    elytra: STRING
+    model: STRING
+    texture: STRING
 minecraft:provides_banner_patterns: PATTERN_TAG
 minecraft:provides_trim_material:
   asset_name*: STRING
   description*: TEXT
   override_armor_assets: MAP|STRING,STRING
 minecraft:rarity: RARITY
-(LIST)minecraft:recipes: STRING
+(LIST)minecraft:recipes: RECIPE
 minecraft:repairable:
-  (MAPLIST)items*: STRING
+  items*:
+    - STRING
+    - LIST|STRING
 minecraft:repair_cost: INT
 minecraft:stored_enchantments: ENCHANTMENTS
 (LIST)minecraft:suspicious_stew_effects:
@@ -310,18 +280,20 @@ minecraft:tool:
   (POSITIVE)damage_per_block: INT
   (POSITIVE)default_mining_speed: FLOAT
   (LIST)rules*:
-    (MAPLIST)blocks*: STRING
+    blocks*:
+      - STRING
+      - LIST|STRING
     correct_for_drops: BOOLEAN
     speed: FLOAT
 minecraft:tooltip_display:
   hide_tooltip: BOOLEAN
   (LIST)hidden_components: STRING
 minecraft:tooltip_style: NAMESPACEID
-minecraft:trim: 
+minecraft:trim:
   material:
     - asset_name*: STRING
       (LIST)description*: TEXT
-      override_armor_assets: 
+      override_armor_assets:
         _: STRING
     - NAMESPACE
   pattern:

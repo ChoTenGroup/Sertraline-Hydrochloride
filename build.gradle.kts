@@ -1,5 +1,6 @@
 import io.izzel.taboolib.gradle.*
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 // Platform property: paper (default, high-version API + Java 21) / spigot / legacy12 (MC 1.12.2 API surface + Java 8).
@@ -10,31 +11,23 @@ plugins {
     java
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.taboolib)
-    kotlin("plugin.serialization") version "2.0.0"
-    // paperweight id("io.papermc.paperweight.userdev") version "2.0.0-beta.19"
-    id("com.vanniktech.maven.publish") version "0.34.0"
-    id("maven-publish")
-    signing
 }
+
+version = libs.versions.sertraline.get()
+require(platform in setOf("paper", "spigot", "legacy12")) { "Unknown platform '$platform'" }
 
 allprojects {
     apply(plugin = "java")
     apply(plugin = "java-library")
     apply(plugin = "io.izzel.taboolib")
     apply(plugin = "org.jetbrains.kotlin.jvm")
-    // paperweight apply(plugin = "io.papermc.paperweight.userdev")
-    apply(plugin = "maven-publish")
-    apply(plugin = "com.vanniktech.maven.publish")
 
     group = "io.github.zzzyyylllty.sertraline"
     version = rootProject.version
 
 
-    configurations {
-        all {
-            exclude(group = "com.mojang.datafixers")
-        }
-    }
+    if (platform != "paper") layout.buildDirectory.set(layout.projectDirectory.dir("build-$platform"))
+    extensions.configure<KotlinJvmProjectExtension> { jvmToolchain(21) }
 
     taboolib {
         env {
@@ -56,7 +49,7 @@ allprojects {
         }
         version {
             taboolib = rootProject.libs.versions.taboolib.get()
-            coroutines = "1.7.3"
+            coroutines = rootProject.libs.versions.coroutines.get()
             skipKotlin = false
             skipKotlinRelocate = false
             skipTabooLibRelocate = false
@@ -65,7 +58,6 @@ allprojects {
     }
 
     repositories {
-        mavenLocal()
         mavenCentral()
 
 
@@ -74,13 +66,10 @@ allprojects {
         maven {
             url = uri("https://repo.tabooproject.org/repository/releases/")
         }
-        maven("https://repo1.maven.org/maven2")
         maven("https://jitpack.io")
         maven("https://repo.papermc.io/repository/maven-public/")
         maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/")
 
-        // Paper related
-        maven("https://repo.papermc.io/repository/maven-public/")
 
         // Plugin dependency repositories
         maven("https://repo.auxilor.io/repository/maven-public/")
@@ -88,20 +77,18 @@ allprojects {
         maven("https://mvn.lumine.io/repository/maven-public/") // MythicMobs
         maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
         maven("https://repo.codemc.io/repository/maven-public/")
-        maven("https://repo.dmulloy2.net/repository/public/")
 
         // Other repositories
-        maven("https://jitpack.io")
         maven("https://repo.gtemc.net/releases/")
         maven {
             url = uri("https://nexus.maplex.top/repository/maven-public/")
-            isAllowInsecureProtocol = true
         }
-        maven("https://repo.skriptlang.org/releases")
-        maven("https://repo.destroystokyo.com/repository/maven-public/")
 
         // FastStats metrics SDK (bStats-like usage tracking)
-        maven("https://repo.faststats.dev/releases")
+        maven("https://repo.faststats.dev/releases") {
+            content { includeGroupByRegex("dev[.]faststats([.].+)?") }
+        }
+        if (rootProject.providers.gradleProperty("useMavenLocal").isPresent) mavenLocal()
     }
 
     dependencies {
@@ -131,9 +118,7 @@ allprojects {
 
         // Compile-time dependencies
         compileOnly("ink.ptms.chemdah:api:1.1.17")
-        compileOnly("ink.ptms:nms-all:1.0.0")
 //        compileOnly("com.willfp:eco:6.77.2")
-        compileOnly("com.github.SkriptLang:Skript:2.14.3")
 
         taboo("ink.ptms:um:1.2.1")
         // MythicLib no longer supports 1.12.2 (1.7.1 is Java 11 bytecode), dropped for legacy12
@@ -141,22 +126,14 @@ allprojects {
             compileOnly(rootProject.libs.mythiclibdist)
             compileOnly("io.lumine:Mythic-Dist:5.6.1")
         }
-        compileOnly(rootProject.libs.placeholderapi)
+        compileOnly(rootProject.libs.placeholderapi) { isTransitive = false }
         compileOnly(rootProject.libs.packeteventsspigot)
-//        compileOnly(rootProject.libs.datafixerupper)
-        compileOnly(rootProject.libs.fluxoncore)
-        compileOnly(rootProject.libs.netty.all)
+        compileOnly(rootProject.libs.fluxoncore) { isTransitive = false }
         // caffeine 3.x requires Java 11; legacy12 uses 2.9.3 (Java 8)
         compileOnly(if (platform == "legacy12") rootProject.libs.caffeineLegacy else rootProject.libs.caffeine)
         compileOnly(rootProject.libs.gson)
-        compileOnly(rootProject.libs.bundles.graalvm)
+        compileOnly(rootProject.libs.graalvm.polyglot)
         compileOnly(rootProject.libs.bundles.jackson)
-        taboo("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-
-        // private dependency
-        // not affect use
-        compileOnly(files("$rootDir/libs/ChoTenTech-1.0.0-api.jar"))
-
 
         // EmbianComponent: paper/spigot use 1.2.2; legacy12 uses the Java 8 bytecode version (data-component runtime version guard, packaged but not invoked)
         taboo(files("$rootDir/libs-public/EmbianComponent-${if (platform == "legacy12") "1.2.2-java8" else "1.2.2"}.jar"))
@@ -187,11 +164,10 @@ allprojects {
 
         // Runtime dependencies
         implementation(rootProject.libs.bundles.reflex)
-        implementation(rootProject.libs.bundles.asm)
         implementation(rootProject.libs.bundles.adventure)
     }
 
-    tasks.withType<KotlinCompile> {
+    tasks.withType<KotlinCompile>().configureEach {
         compilerOptions {
             freeCompilerArgs.addAll(
                 listOf(
@@ -205,7 +181,7 @@ allprojects {
         }
     }
 
-    tasks.withType<JavaCompile> {
+    tasks.withType<JavaCompile>().configureEach {
         options.release.set(if (platform == "legacy12") 8 else 21)
         options.encoding = "UTF-8"
     }
@@ -224,95 +200,9 @@ allprojects {
 
 }
 
-// Special config for the common-files project
-project(":project:common-files") {
-    tasks.withType<ProcessResources>().configureEach {
-        filesMatching("**/*.json") {
-            expand(
-                "nashornVersion" to rootProject.libs.versions.nashorn.get(),
-                "graaljsVersion" to rootProject.libs.versions.graalvm.get(),
-                "jexlVersion" to rootProject.libs.versions.jexl.get(),
-                "gsonVersion" to rootProject.libs.versions.gson.get(),
-                "kotlincryptoVersion" to rootProject.libs.versions.kotlinCrypto.get(),
-                // legacy12 downloads caffeine 2.9.3 at runtime (3.x requires Java 11)
-                "caffeineVersion" to (if (platform == "legacy12") rootProject.libs.versions.caffeineLegacy.get() else rootProject.libs.versions.caffeine.get()),
-                "fluxonVersion" to rootProject.libs.versions.fluxon.get(),
-                "datafixerupperVersion" to rootProject.libs.versions.datafixerupper.get(),
-                "asmVersion" to rootProject.libs.versions.asm.get(),
-//                "uniItemVersion" to rootProject.libs.versions.uniItem.get(),
-                "adventureVersion" to rootProject.libs.versions.adventure.get(),
-                "jacksonVersion" to rootProject.libs.versions.jackson.get(),
-                "arimVersion" to rootProject.libs.versions.arim.get()
-            )
-        }
-        // legacy12 (Java 8): downloading DFU 8 (Java 17+ bytecode) and GraalJS (Java 11+) at runtime would crash immediately,
-        // so these JSON files are simply not packaged; the runtime won't download if no dependency descriptor is found
-        if (platform == "legacy12") {
-            exclude("**/dependencies/datafixerupper.json", "**/dependencies/graaljs.json")
-        }
-    }
-}
-
-//publishing {
-//    publications {
-//        create<MavenPublication>("mavenJava") {
-//            from(components["java"])
-//
-//            // Configure POM file information; required by the Maven repository
-//            pom {
-//                name.set("Sertraline")
-//                description.set("A concise description.")
-//                url.set("https://github.com/zzzyyylllty/Sertraline-Hydrochloride")
-//                licenses {
-//                    license {
-//                        name.set("MIT License")
-//                        url.set("https://mit-license.org/")
-//                    }
-//                }
-//                developers {
-//                    developer {
-//                        id.set("zzzyyylllty")
-//                        name.set("AkaCandyKAngel")
-//                        email.set("3631901756@qq.com")
-//                    }
-//                }
-//                scm {
-//                    url.set("https://github.com/zzzyyylllty/Sertraline-Hydrochloride")
-//                }
-//            }
-//        }
-//    }
-//
-//    repositories {
-//        maven {
-//            name = "OSSRH"
-//            url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
-//            credentials {
-//                username = System.getenv("CENTRAL_TOKEN_USERNAME")
-//                password = System.getenv("CENTRAL_TOKEN_PASSWORD")
-//            }
-//        }
-//    }
-//
-//}
-
-//
-//signing {
-//    sign(publishing.publications["maven"])
-//}
-
-// By default `./gradlew build` produces three sets of jars: Paper, Spigot, and Legacy.
-// platform is a configuration-time property that takes a single value per build process; the Spigot/Legacy sides are handled by the :plugin nested build;
-// the nested build itself is platform=spigot/legacy12, so this dependency doesn't hold there — naturally non-recursive.
-tasks.named("build") {
-    if (platform == "paper") {
-        dependsOn(":plugin:buildSpigot", ":plugin:buildLegacy")
-    }
-}
-
-// Build only the current platform jar (paper → Standard); does not trigger Spigot/Legacy nested builds
+// Compatibility alias for the default platform build.
 tasks.register("buildStandard") {
     group = "build"
-    description = "Build only the Standard (Paper) platform jar, skip Spigot/Legacy nested builds"
-    dependsOn(":plugin:build")
+    description = "Build the selected platform without starting additional Gradle processes"
+    dependsOn("build")
 }

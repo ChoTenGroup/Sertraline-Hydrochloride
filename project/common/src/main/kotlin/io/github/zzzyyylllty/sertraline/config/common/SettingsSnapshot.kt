@@ -54,6 +54,7 @@ class SettingsSnapshot internal constructor(
     val fileLoadTier: Regex,
     val fileLoadType: Regex,
     val fileLoadLevel: Regex,
+    val fileLoadAttribute: Regex,
 
     // preload.script
     val preloadScriptGraalJs: Boolean,
@@ -121,6 +122,7 @@ class SettingsSnapshot internal constructor(
         "tier" to fileLoadTier,
         "type" to fileLoadType,
         "level" to fileLoadLevel,
+        "attribute" to fileLoadAttribute,
     )
 
     /**
@@ -152,7 +154,7 @@ class SettingsSnapshot internal constructor(
          * which has no concurrency issue. When a raw accessor finds a strongly typed path, it returns a copy of the latest value;
          * both values come from the same parse, so there is no inconsistency window.
          */
-        fun of(main: SConfigSpec, experimental: SConfigSpec): SettingsSnapshot {
+        fun of(main: SConfigSpec, experimental: SConfigSpec, previous: SettingsSnapshot? = null): SettingsSnapshot {
             val c = main.config
             val e = experimental.config
 
@@ -163,7 +165,7 @@ class SettingsSnapshot internal constructor(
                 } catch (ex: Exception) {
                     // Fail closed: do not fall back to `.*` for an invalid regex, which would silently expand the load scope.
                     // On reload, keep the previous valid pattern; on first startup with no last-good value, use a strict no-match pattern.
-                    val lastGood = SertralineSettings.currentSnapshot().fileLoadPatterns[name]
+                    val lastGood = previous?.fileLoadPatterns?.get(name)
                     if (lastGood != null) {
                         warningL("Config_Load_Error_Parse", "file-load.$name", "${ex.message ?: "Invalid regex"}; keeping previous pattern")
                         lastGood
@@ -182,7 +184,7 @@ class SettingsSnapshot internal constructor(
                 "item-update.triggers.on-login", "item-update.triggers.on-hold", "item-update.triggers.on-interact",
                 "item-update.triggers.async-interval", "item-update.notify",
                 "file-load.item", "file-load.lore-format", "file-load.mapping", "file-load.crafting-station",
-                "file-load.recipe", "file-load.tier", "file-load.type", "file-load.level",
+                "file-load.recipe", "file-load.tier", "file-load.type", "file-load.level", "file-load.attribute",
                 "preload.script.graaljs", "preload.script.javascript", "preload.script.jexl",
                 "packet.register", "packet.packet-lore", "packet.packet-component",
                 "placeholders.plus", "placeholders.minus",
@@ -240,6 +242,7 @@ class SettingsSnapshot internal constructor(
                 fileLoadTier = compileFileLoadRegex("tier"),
                 fileLoadType = compileFileLoadRegex("type"),
                 fileLoadLevel = compileFileLoadRegex("level"),
+                fileLoadAttribute = compileFileLoadRegex("attribute"),
 
                 preloadScriptGraalJs = c.getBoolean("preload.script.graaljs", true),
                 preloadScriptJavascript = c.getBoolean("preload.script.javascript", true),
@@ -277,7 +280,7 @@ class SettingsSnapshot internal constructor(
 
                 incrementalLoading = c.getBoolean("performance.incremental-loading.enable", true),
                 incrementalLoadingMonitor = c.getStringList("performance.incremental-loading.monitor")
-                    .ifEmpty { listOf("item", "mapping", "lore-format", "crafting-station") },
+                    .ifEmpty { listOf("item") },
                 useSplitReplaceListSerialize = c.getBoolean("performance.adventure.use-split-replace-list-serialize", false),
 
                 fixXBuilderReapplyItemModel = c.getBoolean("fixes.xbuilder.reapply-item-model", true),
@@ -327,6 +330,7 @@ class SettingsSnapshot internal constructor(
             fileLoadTier = DEFAULT_FILE_LOAD_REGEX,
             fileLoadType = DEFAULT_FILE_LOAD_REGEX,
             fileLoadLevel = DEFAULT_FILE_LOAD_REGEX,
+            fileLoadAttribute = DEFAULT_FILE_LOAD_REGEX,
 
             preloadScriptGraalJs = true,
             preloadScriptJavascript = true,
@@ -362,7 +366,7 @@ class SettingsSnapshot internal constructor(
             msgCraftingComplete = "<green>Crafting complete!</green>",
 
             incrementalLoading = true,
-            incrementalLoadingMonitor = listOf("item", "mapping", "lore-format", "crafting-station"),
+            incrementalLoadingMonitor = listOf("item"),
             useSplitReplaceListSerialize = false,
 
             fixXBuilderReapplyItemModel = true,

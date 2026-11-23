@@ -6,7 +6,6 @@ import io.github.zzzyyylllty.sertraline.gui.CraftingStationManager
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import taboolib.common.platform.event.SubscribeEvent
-import taboolib.common.platform.function.submitAsync
 
 /**
  * Listens for player join/quit and handles crafting station session persistence.
@@ -15,12 +14,7 @@ object CraftingStationListener {
 
     @SubscribeEvent
     fun onJoin(event: PlayerJoinEvent) {
-        val player = event.player
-
-        submitAsync {
-            // Try to restore the incomplete crafting session
-            CraftingStationDataManager.restoreSession(player)
-        }
+        CraftingStationDataManager.restoreSession(event.player)
     }
 
     @SubscribeEvent

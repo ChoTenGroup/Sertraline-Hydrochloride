@@ -82,7 +82,7 @@ Sertraline 核心处理器，处理品质、类型、变量、动作、Lore 格�
 sertraline:
   tier: C                    # 品质 ID
   type: weapon               # 类型 ID
-  lore-format: defaultloreformat  # Lore 格式 ID
+  lore-format: loreformat  # Lore 格式 ID
   vals:                      # 静态值（编译时确定）
     some_constant: 100
   vars:                      # 变量数据（可持久化到 NBT）
@@ -434,7 +434,7 @@ my_sword:
   sertraline:
     tier: C
     type: weapon
-    lore-format: defaultloreformat
+    lore-format: loreformat
   xbuilder:
     name: "<!i><gradient:gold:yellow>My Sword"
     lore: |

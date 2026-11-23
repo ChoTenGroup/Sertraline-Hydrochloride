@@ -177,7 +177,11 @@ fun ItemStack.getGemDefinition(): GemDefinition? =
 /** Slot ids currently occupied (`sertraline_gem.used`). */
 fun ItemStack.getUsedGemSlots(): List<String> {
     if (isNotExist()) return emptyList()
-    return getItemTag(true)[GEM_TAG]?.asCompound()?.get("used")?.asList()?.map { it.asString() } ?: emptyList()
+    return usedGemSlots(getItemTag(true))
+}
+
+internal fun usedGemSlots(tag: ItemTag): List<String> {
+    return tag[GEM_TAG]?.asCompound()?.get("used")?.asList()?.map { it.asString() }.orEmpty()
 }
 
 /** All socketed gems with their metadata. */
@@ -232,15 +236,30 @@ fun socketGem(
     if (weapon.isNotExist()) return GemSocketResult.WEAPON_NOT_SERTRALINE
     if (gem.isNotExist() || gem.amount <= 0) return GemSocketResult.GEM_NOT_SERTRALINE
 
-    val weaponId = weapon.getSertralineId() ?: return GemSocketResult.WEAPON_NOT_SERTRALINE
-    val weaponTemplate = itemTemplateForStack(weapon, player) ?: return GemSocketResult.WEAPON_NOT_SERTRALINE
+    val weaponTag = weapon.getItemTag(true)
+    val weaponTemplate = itemTemplateForStack(weapon, player, weaponTag) ?: return GemSocketResult.WEAPON_NOT_SERTRALINE
+    val gemTag = gem.getItemTag(true)
+    val gemTemplate = itemTemplateForStack(gem, player, gemTag) ?: return GemSocketResult.GEM_NOT_SERTRALINE
+    val gemDef = gemTemplate.getGemDefinition() ?: return GemSocketResult.NOT_A_GEM
+    return socketKnownGem(player, weapon, gem, slotId, method, weaponTemplate, weaponTag, gemDef, gemTemplate.storageKey)
+}
+
+internal fun socketKnownGem(
+    player: Player?,
+    weapon: ItemStack,
+    gem: ItemStack,
+    slotId: String,
+    method: GemSocketMethod,
+    weaponTemplate: io.github.zzzyyylllty.sertraline.data.AbstractSItem,
+    weaponTag: ItemTag,
+    gemDef: GemDefinition,
+    gemId: String
+): GemSocketResult {
+    val weaponId = weaponTemplate.storageKey
     val slots = weaponTemplate.getGemSlotDefinitions()
     if (slots.isEmpty()) return GemSocketResult.WEAPON_HAS_NO_SLOTS
     val slot = slots[slotId] ?: return GemSocketResult.SLOT_NOT_FOUND
-    if (slotId in weapon.getUsedGemSlots()) return GemSocketResult.SLOT_OCCUPIED
-
-    val gemId = gem.getSertralineId() ?: return GemSocketResult.GEM_NOT_SERTRALINE
-    val gemDef = itemTemplateForStack(gem, player)?.getGemDefinition() ?: return GemSocketResult.NOT_A_GEM
+    if (slotId in usedGemSlots(weaponTag)) return GemSocketResult.SLOT_OCCUPIED
     if (!slot.accepts(gemDef.color)) return GemSocketResult.COLOR_MISMATCH
     if (!GemSocketPolicy.isAllowedByDefinition(method, weaponTemplate.isClickSocketEnabled(), slot, gemDef)) {
         devLog("Gem '$gemId' refused by definition for route $method (item/socket/gem click flag)")
@@ -261,7 +280,7 @@ fun socketGem(
     // Ownership is resolved by the LONGEST matching `gem_<slotId>_` prefix, never by a plain
     // `startsWith`: `slot` is a prefix of `slot_red`, so a naive filter would delete another
     // socket's alterations (and revert their stats) while leaving them marked as occupied.
-    val existingRecords = weapon.getItemAlterationRecords()
+    val existingRecords = io.github.zzzyyylllty.sertraline.item.readAlterationRecords(weaponTag)
         .filterNot { gemAlterationOwner(it.alteration.name, slots.keys) == slotId }
         .mapIndexed { index, record -> index to record }
         .sortedBy { (index, record) -> record.order ?: index.toLong() }
@@ -456,8 +475,11 @@ private fun clearGemSlotFromTag(tag: ItemTag, slotId: String) {
  * so the new item never aliases the state of the item it was rebuilt from.
  */
 fun copyGemStateToTag(tag: ItemTag, from: ItemStack?) {
-    if (from.isNotExist()) return
-    val source = from?.getItemTag(true)?.get(GEM_TAG)?.asCompound() ?: return
+    if (!from.isNotExist()) copyGemState(tag, from?.getItemTag(true))
+}
+
+internal fun copyGemState(tag: ItemTag, from: ItemTag?) {
+    val source = from?.get(GEM_TAG)?.asCompound() ?: return
 
     val copy = ItemTag()
     source["used"]?.asList()?.map { it.asString() }?.takeIf { it.isNotEmpty() }?.let { copy["used"] = it }

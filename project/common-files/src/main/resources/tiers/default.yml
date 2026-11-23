@@ -4,7 +4,7 @@ E:
   name: "<dark_gray>E</dark_gray>"
   description: "<dark_gray>E</dark_gray>"
   color: "<dark_gray>"
-  weight: 100 # Not yet completed weight
+  weight: 100
 
 
 
@@ -12,32 +12,32 @@ D:
   name: "<dark_gray>D</dark_gray>"
   description: "<dark_gray>D</dark_gray>"
   color: "<dark_gray>"
-  weight: 100 # Not yet completed weight
+  weight: 100
 
 
 C:
   name: "<gray>C</gray>"
   description: "<gray>C</gray>"
   color: "<gray>"
-  weight: 100 # Not yet completed weight
+  weight: 100
 
 
 B:
   name: "<green>B</green>"
   description: "<green>B</green>"
   color: "<gray>"
-  weight: 100 # Not yet completed weight
+  weight: 100
 
 
 A:
   name: "<aqua>A</aqua>"
   description: "<aqua>A</aqua>"
   color: "<aqua>"
-  weight: 100 # Not yet completed weight
+  weight: 100
 
 
 S:
   name: "<gold>S</gold>"
   description: "<gold>S</gold>"
   color: "<gold>"
-  weight: 100 # Not yet completed weight
+  weight: 100

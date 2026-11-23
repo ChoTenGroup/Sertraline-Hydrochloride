@@ -39,7 +39,7 @@ internal fun resolveGemSlotLabel(
     if (configuredText != null) return configuredText
     val node = "Gem_Slot_${id}_$label"
     val translated = languageText(node)
-    if (translated != node) return translated
+    if (translated != node && translated != "{$node}") return translated
     return if (label == "Name") id else ""
 }
 

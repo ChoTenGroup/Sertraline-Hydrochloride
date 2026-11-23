@@ -1,0 +1,134 @@
+# 默认战斗武器 / Default combat weapons
+# Main hand only. Requires attributes/default.yml and global-listeners/default-combat.yml.
+
+combat_guard_sword:
+  attribute-modifiers:
+    - type: sertraline:physical_damage
+      id: sertraline:combat_guard_sword/physical_damage
+      amount: 5
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:physical_defense
+      id: sertraline:combat_guard_sword/physical_defense
+      amount: 10
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>守卫长剑"
+    material: IRON_SWORD
+    lore:
+      - "<!i><gray>稳健的近战武器。"
+      - "<!i><gray>附加物理伤害 <white>+5"
+      - "<!i><gray>物理防御 <white>+10"
+
+combat_assassin_dagger:
+  attribute-modifiers:
+    - type: sertraline:physical_damage
+      id: sertraline:combat_assassin_dagger/physical_damage
+      amount: 3
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:critical_chance
+      id: sertraline:combat_assassin_dagger/critical_chance
+      amount: 0.25
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:critical_bonus
+      id: sertraline:combat_assassin_dagger/critical_bonus
+      amount: 0.75
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>刺客短刃"
+    material: IRON_SWORD
+    lore:
+      - "<!i><gray>以暴击见长的轻刃。"
+      - "<!i><gray>附加物理伤害 <white>+3"
+      - "<!i><gray>暴击概率 <white>+25%"
+      - "<!i><gray>暴击加成 <white>+75%"
+
+combat_arcane_blade:
+  attribute-modifiers:
+    - type: sertraline:magic_damage
+      id: sertraline:combat_arcane_blade/magic_damage
+      amount: 8
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:magic_defense
+      id: sertraline:combat_arcane_blade/magic_defense
+      amount: 15
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>秘法之刃"
+    material: DIAMOND_SWORD
+    lore:
+      - "<!i><gray>命中时附加魔法伤害。"
+      - "<!i><gray>附加魔法伤害 <white>+8"
+      - "<!i><gray>魔法防御 <white>+15"
+
+combat_ember_sword:
+  attribute-modifiers:
+    - type: sertraline:fire_damage
+      id: sertraline:combat_ember_sword/fire_damage
+      amount: 7
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:fire_defense
+      id: sertraline:combat_ember_sword/fire_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>余烬长剑"
+    material: GOLDEN_SWORD
+    lore:
+      - "<!i><gray>附加火焰伤害，不施加燃烧。"
+      - "<!i><gray>附加火焰伤害 <white>+7"
+      - "<!i><gray>火焰防御 <white>+20"
+
+combat_venom_blade:
+  attribute-modifiers:
+    - type: sertraline:poison_damage
+      id: sertraline:combat_venom_blade/poison_damage
+      amount: 6
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:critical_chance
+      id: sertraline:combat_venom_blade/critical_chance
+      amount: 0.1
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>淬毒短刃"
+    material: STONE_SWORD
+    lore:
+      - "<!i><gray>附加即时毒伤，不施加中毒效果。"
+      - "<!i><gray>附加中毒伤害 <white>+6"
+      - "<!i><gray>暴击概率 <white>+10%"
+
+combat_ranger_bow:
+  attribute-modifiers:
+    - type: sertraline:physical_damage
+      id: sertraline:combat_ranger_bow/physical_damage
+      amount: 4
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:critical_chance
+      id: sertraline:combat_ranger_bow/critical_chance
+      amount: 0.15
+      operation: minecraft:add_value
+      slot: mainhand
+    - type: sertraline:critical_bonus
+      id: sertraline:combat_ranger_bow/critical_bonus
+      amount: 0.25
+      operation: minecraft:add_value
+      slot: mainhand
+  xbuilder:
+    name: "<!i><aqua>游侠长弓"
+    material: BOW
+    lore:
+      - "<!i><gray>箭矢在发射时保存进攻属性。"
+      - "<!i><gray>附加物理伤害 <white>+4"
+      - "<!i><gray>暴击概率 <white>+15%"
+      - "<!i><gray>暴击加成 <white>+25%"

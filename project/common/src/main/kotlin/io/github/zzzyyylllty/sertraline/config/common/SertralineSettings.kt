@@ -30,7 +30,18 @@ object SertralineSettings {
     @Volatile
     private var current: SettingsSnapshot = INITIAL
 
-    private val snap: SettingsSnapshot get() = current
+    private val candidate = ThreadLocal<SettingsSnapshot>()
+    private val snap: SettingsSnapshot get() = candidate.get() ?: current
+
+    internal fun <T> withCandidate(snapshot: SettingsSnapshot, action: () -> T): T {
+        val previous = candidate.get()
+        candidate.set(snapshot)
+        return try {
+            action()
+        } finally {
+            if (previous == null) candidate.remove() else candidate.set(previous)
+        }
+    }
 
     val configVersion: Int get() = snap.configVersion
     val debug: Boolean get() = snap.debug
@@ -78,6 +89,7 @@ object SertralineSettings {
     val fileLoadTier: Regex get() = snap.fileLoadTier
     val fileLoadType: Regex get() = snap.fileLoadType
     val fileLoadLevel: Regex get() = snap.fileLoadLevel
+    val fileLoadAttribute: Regex get() = snap.fileLoadAttribute
 
     // preload.script
     val preloadScriptGraalJs: Boolean get() = snap.preloadScriptGraalJs
@@ -151,14 +163,22 @@ object SertralineSettings {
         get() = mainSpec.config.getConfigurationSection("database")
 
     /** Current snapshot (for callers that need to capture a consistent set of settings, such as comparing restart-only values during reload). */
-    fun currentSnapshot(): SettingsSnapshot = current
+    fun currentSnapshot(): SettingsSnapshot = snap
 
     // ==================== Loading ====================
 
     /** Builds and publishes a new snapshot as a whole (shared by bind/reload; database startup values are not specially handled, per DatabaseManager's lazy semantics). */
     fun load(main: SConfigSpec, experimental: SConfigSpec) {
+        publish(main, experimental, SettingsSnapshot.of(main, experimental, current.takeUnless { it === INITIAL }))
+    }
+
+    internal fun publish(main: SConfigSpec, experimental: SConfigSpec, snapshot: SettingsSnapshot) {
         mainSpec = main
         experimentalSpec = experimental
-        current = SettingsSnapshot.of(main, experimental)
+        current = snapshot
+    }
+
+    internal fun reset() {
+        current = INITIAL
     }
 }

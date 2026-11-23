@@ -1,13 +1,7 @@
 package io.github.zzzyyylllty.sertraline.attribute
 
-import io.github.zzzyyylllty.chotentech.attribute.api.ChoTenAttributeAPI
-import io.github.zzzyyylllty.chotentech.attribute.data.AttributeModifier
-import io.github.zzzyyylllty.chotentech.attribute.data.AttributeSlot
-import io.github.zzzyyylllty.chotentech.attribute.data.ModifierSource
-import io.github.zzzyyylllty.chotentech.attribute.data.ModifierType
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.logger.warningS
-import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import io.github.zzzyyylllty.sertraline.util.serialize.generateUUID
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -18,23 +12,23 @@ class ChotenAttributeProvider : AttributeProvider {
 
     override val name: String = "choten"
 
-    private val appliedModifiers = ConcurrentHashMap<UUID, MutableMap<UUID, AttributeModifier>>()
+    private val appliedModifiers = ConcurrentHashMap<UUID, MutableMap<UUID, ChoTenModifier>>()
 
     companion object {
-        /**
-         * Whether the ChoTen attribute API is usable.
-         *
-         * `Bukkit.getPluginManager().getPlugin("ChoTenTech")` only tells us the *plugin* is present;
-         * the API classes are a hard `compileOnly` reference in this file, so a server that ships a
-         * ChoTenTech build without the attribute module would fail with `NoClassDefFoundError` as
-         * soon as [refreshAttributes] runs. Resolve the API class explicitly instead.
-         */
-        val available: Boolean by lazy {
-            if (Bukkit.getPluginManager().getPlugin("ChoTenTech") == null) false
-            else runCatching {
-                Class.forName("io.github.zzzyyylllty.chotentech.attribute.api.ChoTenAttributeAPI", false, javaClass.classLoader)
-            }.isSuccess
+        private val binding: ChoTenBinding? by lazy {
+            val plugin = Bukkit.getPluginManager().getPlugin("ChoTenTech") ?: return@lazy null
+            try {
+                ChoTenBinding(plugin.javaClass.classLoader)
+            } catch (e: ReflectiveOperationException) {
+                warningS("ChoTenTech attribute integration is unavailable: ${e.message}")
+                null
+            } catch (e: LinkageError) {
+                warningS("ChoTenTech attribute integration is unavailable: ${e.message}")
+                null
+            }
         }
+
+        val available: Boolean get() = binding != null
 
         private val chotenFilter = setOf("id", "source", "slot", "allowed")
 
@@ -46,20 +40,19 @@ class ChotenAttributeProvider : AttributeProvider {
             }
         }
 
-        private fun parseModifierSource(raw: String?): ModifierSource {
-            return raw?.let { runCatching { ModifierSource.valueOf(it.uppercase()) }.getOrNull() }
-                ?: ModifierSource.ARMOR
+        private fun parseModifierSource(raw: String?): String {
+            return raw?.uppercase()?.takeIf { it in binding?.sourceNames.orEmpty() } ?: "ARMOR"
         }
 
-        private fun parseAttributeSlot(raw: String): AttributeSlot {
+        private fun parseAttributeSlot(raw: String): String {
             return when (raw) {
-                "mainhand" -> AttributeSlot.MAINHAND
-                "offhand" -> AttributeSlot.OFFHAND
-                "helmet" -> AttributeSlot.HEAD
-                "chestplate" -> AttributeSlot.CHEST
-                "leggings" -> AttributeSlot.LEGS
-                "boots" -> AttributeSlot.FEET
-                else -> AttributeSlot.OTHER
+                "mainhand" -> "MAINHAND"
+                "offhand" -> "OFFHAND"
+                "helmet" -> "HEAD"
+                "chestplate" -> "CHEST"
+                "leggings" -> "LEGS"
+                "boots" -> "FEET"
+                else -> "OTHER"
             }
         }
 
@@ -75,12 +68,12 @@ class ChotenAttributeProvider : AttributeProvider {
             }
 
             val modifierType = when (str.last()) {
-                '%', 'c', 'm' -> ModifierType.PERCENT
-                'a', 's' -> ModifierType.MULTIPLY
-                else -> ModifierType.ADD
+                '%', 'c', 'm' -> "PERCENT"
+                'a', 's' -> "MULTIPLY"
+                else -> "ADD"
             }
 
-            val numericValue = if (modifierType == ModifierType.ADD) {
+            val numericValue = if (modifierType == "ADD") {
                 str.toDoubleOrNull() ?: 1.0
             } else {
                 str.dropLast(1).toDoubleOrNull() ?: 1.0
@@ -92,22 +85,22 @@ class ChotenAttributeProvider : AttributeProvider {
         private data class ChotenAttributeValue(
             val atbID: String,
             val atbValue: Double = 1.0,
-            val atbType: ModifierType = ModifierType.ADD,
+            val atbType: String = "ADD",
         )
     }
 
     override fun refreshAttributes(player: Player, itemList: Map<String, ItemBound>) {
-        if (!available) return
-
-        val api = ChoTenAttributeAPI.instance
+        val api = binding ?: return
         val playerUuid = player.uniqueId
 
         val oldModifiers = appliedModifiers[playerUuid].orEmpty().toMap()
-        val newModifiers = linkedMapOf<UUID, AttributeModifier>()
+        val newModifiers = linkedMapOf<UUID, ChoTenModifier>()
 
         itemList.forEach { (slot, itemBound) ->
             val sItem = itemBound.sItem
-            val chotenData = sItem.data["choten"] as? Map<*, *> ?: return@forEach
+            val chotenData = sItem.data.filterKeys { it.startsWith("choten:") }
+                .mapKeys { (key, _) -> key.removePrefix("choten:") }
+                .ifEmpty { return@forEach }
             val chotenMutable = chotenData.toMutableMap()
 
             devLog("chotenData: $chotenData")
@@ -130,9 +123,9 @@ class ChotenAttributeProvider : AttributeProvider {
 
             val source = chotenData["source"]?.toString()?.let { parseModifierSource(it) }
                 ?: when (slot) {
-                    "mainhand" -> ModifierSource.MAINHAND
-                    "offhand" -> ModifierSource.OFFHAND
-                    else -> ModifierSource.ARMOR
+                    "mainhand" -> "MAINHAND"
+                    "offhand" -> "OFFHAND"
+                    else -> "ARMOR"
                 }
 
             val attributeSlot = parseAttributeSlot(slot)
@@ -147,14 +140,13 @@ class ChotenAttributeProvider : AttributeProvider {
                 // addModifier overwrite the earlier modifier, silently reducing the player's attributes.
                 val modifierUuid = (sItem.storageKey + "_" + slot + "_" + atb.atbID).generateUUID()
 
-                val modifier = AttributeModifier(
+                val modifier = ChoTenModifier(
                     modifierUuid,
                     atb.atbID,
                     atb.atbValue,
                     atb.atbType,
                     source,
-                    attributeSlot,
-                    null
+                    attributeSlot
                 )
 
                 newModifiers[modifierUuid] = modifier
@@ -203,13 +195,8 @@ class ChotenAttributeProvider : AttributeProvider {
      */
     fun forget(playerUuid: UUID) {
         val tracked = appliedModifiers[playerUuid] ?: return
-        if (!available) {
-            appliedModifiers.remove(playerUuid, tracked)
-            return
-        }
-
-        val api = ChoTenAttributeAPI.instance
-        val failed = linkedMapOf<UUID, AttributeModifier>()
+        val api = binding ?: return
+        val failed = linkedMapOf<UUID, ChoTenModifier>()
         tracked.forEach { (modifierUuid, modifier) ->
             try {
                 api.removeModifier(playerUuid, modifierUuid)
@@ -221,5 +208,58 @@ class ChotenAttributeProvider : AttributeProvider {
 
         if (failed.isEmpty()) appliedModifiers.remove(playerUuid, tracked)
         else appliedModifiers[playerUuid] = failed
+    }
+}
+
+private data class ChoTenModifier(
+    val uuid: UUID,
+    val attribute: String,
+    val amount: Double,
+    val type: String,
+    val source: String,
+    val slot: String,
+)
+
+/** Links to the optional plugin at runtime; its distribution is not needed to compile Sertraline. */
+private class ChoTenBinding(private val loader: ClassLoader) {
+    private fun type(name: String): Class<*> =
+        Class.forName("io.github.zzzyyylllty.chotentech.attribute.$name", false, loader)
+
+    private val api = type("api.ChoTenAttributeAPI")
+    private val instance = api.getMethod("getInstance")
+    private val modifier = type("data.AttributeModifier")
+    private val modifierType = type("data.ModifierType")
+    private val modifierSource = type("data.ModifierSource")
+    private val attributeSlot = type("data.AttributeSlot")
+    private val constructor = modifier.getConstructor(
+        UUID::class.java, String::class.java, Double::class.javaPrimitiveType, modifierType,
+        modifierSource, attributeSlot, Long::class.javaObjectType,
+    )
+    private val add = api.getMethod("addModifier", UUID::class.java, modifier)
+    private val remove = api.getMethod("removeModifier", UUID::class.java, UUID::class.java)
+    private val update = api.getMethod("updatePlayerAttributes", Player::class.java)
+
+    private val types = constants(modifierType)
+    private val sources = constants(modifierSource)
+    private val slots = constants(attributeSlot)
+    val sourceNames: Set<String> get() = sources.keys
+
+    private fun constants(type: Class<*>): Map<String, Any> =
+        type.enumConstants.associateBy { (it as Enum<*>).name }
+
+    fun addModifier(player: UUID, input: ChoTenModifier) {
+        val value = constructor.newInstance(
+            input.uuid, input.attribute, input.amount, types.getValue(input.type),
+            sources.getValue(input.source), slots.getValue(input.slot), null,
+        )
+        add.invoke(instance.invoke(null), player, value)
+    }
+
+    fun removeModifier(player: UUID, id: UUID) {
+        remove.invoke(instance.invoke(null), player, id)
+    }
+
+    fun updatePlayerAttributes(player: Player) {
+        update.invoke(instance.invoke(null), player)
     }
 }

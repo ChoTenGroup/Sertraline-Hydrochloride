@@ -36,6 +36,7 @@ import io.github.zzzyyylllty.sertraline.event.SertralineLoreFormatFileLoadPostEv
 import io.github.zzzyyylllty.sertraline.event.SertralineLoreFormatFileLoadPreEvent
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.severeL
+import io.github.zzzyyylllty.sertraline.logger.warningS
 import io.github.zzzyyylllty.sertraline.logger.warningL
 import io.github.zzzyyylllty.sertraline.util.DependencyHelper
 import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
@@ -91,7 +92,7 @@ fun loadLoreFormatFile(file: File, regex: Regex, context: LoadContext? = null): 
         devLog("${file.name} not match regex, skipping...")
         return emptyMap()
     }
-    val raw = multiExtensionLoader(file) ?: return emptyMap()
+    val raw = multiExtensionLoader(file, context) ?: return emptyMap()
     val map = TemplateManager.resolveInMap(raw, context)
     if (map.isEmpty()) {
         severeL("Config_Load_Error_Empty", file.name)
@@ -494,5 +495,5 @@ private fun validateCompareNameRefs(formatKey: String, format: LoreFormat) {
 
 private fun compileJsSafely(source: String): CompiledScript? =
     runCatching { source.compileJS() }
-        .onFailure { warningL("JS compilation error: ${it.message}") }
+        .onFailure { warningS("JS compilation error: ${it.message}") }
         .getOrNull()

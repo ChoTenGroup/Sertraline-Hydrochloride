@@ -8,10 +8,10 @@
 
 Generate a list of lore components from the given format. Returns `null` if the format does not exist.
 
-`generateLore(item: ItemStack, sItem: ModernSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): List<Component>?`
+`generateLore(item: ItemStack, sItem: AbstractSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): List<Component>?`
 
 - `item`: the item to generate lore for.
-- `sItem`: the item's `ModernSItem` data.
+- `sItem`: the item's `AbstractSItem` data.
 - `format`: the lore format name.
 - `player`: used for placeholder parsing (optional).
 - `defaultVars`: extra default data merged into the item's vars for placeholder parsing.
@@ -20,15 +20,15 @@ Generate a list of lore components from the given format. Returns `null` if the 
 
 Generate lore from the given format and set it directly on the item, returning the modified item. If the format does not exist, returns the original item unmodified.
 
-`applyLore(item: ItemStack, sItem: ModernSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): ItemStack`
+`applyLore(item: ItemStack, sItem: AbstractSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): ItemStack`
 
 Parameters mean the same as `generateLore`.
 
 ## getFormat
 
-Get a loaded `LoreFormat` object; returns `null` if it does not exist.
+Get a loaded `AbstractLoreFormat` object; returns `null` if it does not exist.
 
-`getFormat(format: String): LoreFormat?`
+`getFormat(format: String): AbstractLoreFormat?`
 
 ## getFormatNames
 
