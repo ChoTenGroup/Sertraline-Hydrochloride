@@ -29,7 +29,7 @@ fun getFeatureAction(e: FeatureLoadEvent) {
     val triggers = mutableListOf<String>()
     content.forEach {
         triggers.add(it.key.toString())
-        val rawList = it.value as List<LinkedHashMap<*,*>>
+        val rawList = it.value as List<Map<*, *>>
         val list = mutableListOf<LinkedHashMap<*,*>>()
         rawList.forEach { it ->
 

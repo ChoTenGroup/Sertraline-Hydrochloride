@@ -23,8 +23,8 @@ counter_sword_maker:
         name: "<dark_gray>background"
         lore: |-
           <dark_gray>Nothing to see here :)
-      next_page: # 下一页不支持字符，必须设置槽位。next page not support char, must set a slot.
-        slot: 50
+      next_page:
+        char: '>'
         roll: true # 循环切换页面 cycle toggle page
         material: ARROW
         name: "<green>Next Page {next_page}"
@@ -32,9 +32,9 @@ counter_sword_maker:
           toggle to page {next_page}
         agents:
           onLeft: |-
-            player.sendMessage("toggled")
-      previous_page: # 上一页不支持字符，必须设置槽位。previous page not support char, must set a slot.
-        slot: 48
+            js: player.sendMessage("toggled")
+      previous_page:
+        char: '<'
         roll: true # 循环切换页面 cycle toggle page
         material: ARROW
         name: "<green>Previous Page {previous_page}"
@@ -42,7 +42,7 @@ counter_sword_maker:
           toggle to page {previous_page}
         agents:
           onLeft: |-
-            player.sendMessage("toggled")
+            js: player.sendMessage("toggled")
   recipes:
     test_recipe:
 
@@ -55,16 +55,16 @@ counter_sword_maker:
         cancellable: false
 
       conditions:
-        - name: "Player health is greater than 20"
+        - name: "Player health is at least 20"
           type: Scaled
           amount: "%player_health%"
           required: "20"
           condition: PlayerUtil.parsePlaceholders(player, "%player_health%") >= 20
           agents:
             onSuccess: |-
-              player.sendMessage("Your health is < 20")
+              js: player.sendMessage("Your health is at least 20")
             onFail: |-
-              player.sendMessage("Your health is < 20")
+              js: player.sendMessage("Your health is < 20")
 
       messages: # 若此处未定义任何消息，则使用 config 中的默认消息。If not define any message here, use default message in config.
         ConditionNotMetScaled: "Condition not met: {condition_name} - {condition_amount}/{condition_required}"

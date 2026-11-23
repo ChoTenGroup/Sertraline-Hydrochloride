@@ -1,6 +1,7 @@
 package io.github.zzzyyylllty.sertraline.util.serialize
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.dataformat.toml.TomlFactory
 import com.fasterxml.jackson.module.kotlin.*
@@ -15,17 +16,14 @@ private val SUPPORTED_FORMATS = setOf("yaml", "toml", "json")
 fun isSupportedFormat(format: String): Boolean = format in SUPPORTED_FORMATS
 
 fun parseToMap(data: String, format: String): Map<String, Any?>? {
-    return try {
-        val mapper = mapperCache.computeIfAbsent(format) { fmt ->
-            val factory: JsonFactory = when (fmt) {
-                "yaml" -> YAMLFactory()
-                "toml" -> TomlFactory()
-                else -> JsonFactory()
-            }
-            ObjectMapper(factory).registerKotlinModule()
+    require(isSupportedFormat(format)) { "Unsupported configuration format: $format" }
+    val mapper = mapperCache.computeIfAbsent(format) { fmt ->
+        val factory: JsonFactory = when (fmt) {
+            "yaml" -> YAMLFactory()
+            "toml" -> TomlFactory()
+            else -> JsonFactory()
         }
-        mapper.readValue(data, object : TypeReference<Map<String, Any?>>() {})
-    } catch (_: Exception) {
-        null
+        ObjectMapper(factory).registerKotlinModule().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
     }
+    return mapper.readValue(data, object : TypeReference<Map<String, Any?>>() {})
 }

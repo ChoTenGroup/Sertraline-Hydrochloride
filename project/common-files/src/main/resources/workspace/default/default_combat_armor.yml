@@ -1,0 +1,134 @@
+# 默认战斗装备 / Default combat equipment
+# Bonuses apply only in the listed slot. No implicit set bonus.
+
+combat_sentinel_helmet:
+  attribute-modifiers:
+    - type: sertraline:physical_defense
+      id: sertraline:combat_sentinel_helmet/physical_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: head
+    - type: sertraline:magic_defense
+      id: sertraline:combat_sentinel_helmet/magic_defense
+      amount: 10
+      operation: minecraft:add_value
+      slot: head
+  xbuilder:
+    name: "<!i><aqua>哨卫头盔"
+    material: IRON_HELMET
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>物理防御 <white>+20"
+      - "<!i><gray>魔法防御 <white>+10"
+
+combat_runic_chestplate:
+  attribute-modifiers:
+    - type: sertraline:physical_defense
+      id: sertraline:combat_runic_chestplate/physical_defense
+      amount: 25
+      operation: minecraft:add_value
+      slot: chest
+    - type: sertraline:magic_defense
+      id: sertraline:combat_runic_chestplate/magic_defense
+      amount: 35
+      operation: minecraft:add_value
+      slot: chest
+  xbuilder:
+    name: "<!i><aqua>符文胸甲"
+    material: DIAMOND_CHESTPLATE
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>物理防御 <white>+25"
+      - "<!i><gray>魔法防御 <white>+35"
+
+combat_ember_leggings:
+  attribute-modifiers:
+    - type: sertraline:physical_defense
+      id: sertraline:combat_ember_leggings/physical_defense
+      amount: 15
+      operation: minecraft:add_value
+      slot: legs
+    - type: sertraline:fire_defense
+      id: sertraline:combat_ember_leggings/fire_defense
+      amount: 50
+      operation: minecraft:add_value
+      slot: legs
+  xbuilder:
+    name: "<!i><aqua>余烬护腿"
+    material: IRON_LEGGINGS
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>物理防御 <white>+15"
+      - "<!i><gray>火焰防御 <white>+50"
+
+combat_feather_boots:
+  attribute-modifiers:
+    - type: sertraline:fall_defense
+      id: sertraline:combat_feather_boots/fall_defense
+      amount: 100
+      operation: minecraft:add_value
+      slot: feet
+    - type: sertraline:physical_defense
+      id: sertraline:combat_feather_boots/physical_defense
+      amount: 10
+      operation: minecraft:add_value
+      slot: feet
+  xbuilder:
+    name: "<!i><aqua>轻羽长靴"
+    material: LEATHER_BOOTS
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>摔落防御 <white>+100"
+      - "<!i><gray>物理防御 <white>+10"
+
+combat_antidote_helmet:
+  attribute-modifiers:
+    - type: sertraline:poison_defense
+      id: sertraline:combat_antidote_helmet/poison_defense
+      amount: 75
+      operation: minecraft:add_value
+      slot: head
+    - type: sertraline:magic_defense
+      id: sertraline:combat_antidote_helmet/magic_defense
+      amount: 15
+      operation: minecraft:add_value
+      slot: head
+  xbuilder:
+    name: "<!i><aqua>净毒兜帽"
+    material: LEATHER_HELMET
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>中毒防御 <white>+75"
+      - "<!i><gray>魔法防御 <white>+15"
+
+combat_ward_shield:
+  attribute-modifiers:
+    - type: sertraline:physical_defense
+      id: sertraline:combat_ward_shield/physical_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: offhand
+    - type: sertraline:magic_defense
+      id: sertraline:combat_ward_shield/magic_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: offhand
+    - type: sertraline:fire_defense
+      id: sertraline:combat_ward_shield/fire_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: offhand
+    - type: sertraline:poison_defense
+      id: sertraline:combat_ward_shield/poison_defense
+      amount: 20
+      operation: minecraft:add_value
+      slot: offhand
+  xbuilder:
+    name: "<!i><aqua>四象守护盾"
+    material: SHIELD
+    lore:
+      - "<!i><gray>仅在对应装备栏生效。"
+      - "<!i><gray>物理防御 <white>+20"
+      - "<!i><gray>魔法防御 <white>+20"
+      - "<!i><gray>火焰防御 <white>+20"
+      - "<!i><gray>中毒防御 <white>+20"

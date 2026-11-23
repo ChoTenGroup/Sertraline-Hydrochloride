@@ -10,7 +10,7 @@ sertraline:vals:
     - SERTRALINE
     - VARIABLES
 sertraline:vars:
-  config: sertraline.vals
+  config: sertraline.vars
   material: anvil
   tags:
     - SERTRALINE
@@ -22,7 +22,7 @@ sertraline:dynamics:
     - SERTRALINE
     - VARIABLES
 sertraline:actions:
-  config: sertraline.action
+  config: sertraline.actions
   material: gold_ingot
   tags:
     - SERTRALINE
@@ -972,3 +972,59 @@ mmo:stamina-regeneration:
 
 
 
+
+sertraline:type:
+  config: sertraline.type
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:level:
+  config: sertraline.level
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:lore-format:
+  config: sertraline.lore-format
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:keep-context:
+  config: sertraline.keep-context
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:revision-id:
+  config: sertraline.revision-id
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:no-sertraline-id:
+  config: sertraline.no-sertraline-id
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:compare-path:
+  config: sertraline.compare-path
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:gem:
+  config: sertraline.gem
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:gem-slots:
+  config: sertraline.gem-slots
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:gem-click:
+  config: sertraline.gem-click
+  material: PAPER
+  tags:
+    - SERTRALINE
+sertraline:gem-click-socket:
+  config: sertraline.gem-click-socket
+  material: PAPER
+  tags:
+    - SERTRALINE

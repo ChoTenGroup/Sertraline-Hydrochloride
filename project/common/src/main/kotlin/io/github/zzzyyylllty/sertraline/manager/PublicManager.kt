@@ -2,13 +2,11 @@ package io.github.zzzyyylllty.sertraline.manager
 
 import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.data.AbstractSItem
-import io.github.zzzyyylllty.sertraline.data.SItemFactory
 import java.util.concurrent.ConcurrentHashMap
 
 class PublicManager {
 
     private val temporaryCache = ConcurrentHashMap<String, AbstractSItem>()
-    private val survivalBuffer = LinkedHashMap<String, String>()
 
     fun getItem(id: String, sub: SubManagerType): AbstractSItem? {
         return when (sub) {
@@ -28,6 +26,7 @@ class PublicManager {
         }
     }
 
+    @Synchronized
     fun createTemporary(id: String, item: AbstractSItem) {
         // Both insertions must be checked atomically, and rollback must remove only the entry inserted by this call.
         if (temporaryCache.putIfAbsent(id, item) != null) {
@@ -41,6 +40,7 @@ class PublicManager {
         }
     }
 
+    @Synchronized
     fun remove(id: String, sub: SubManagerType): Boolean {
         return when (sub) {
             SubManagerType.PERSISTENT -> {
@@ -59,33 +59,14 @@ class PublicManager {
         }
     }
 
-    fun preReload() {
-        survivalBuffer.clear()
-        temporaryCache.forEach { (id, item) ->
-            // Strip sertraline:context before serialization — it may contain runtime objects
-            // (Player, Event, etc.) that Gson cannot round-trip, causing silent data loss.
-            val context = item.getDeepData("sertraline:context")
-            if (context != null) item.setDeepData("sertraline:context", null)
-            try {
-                item.serialize()?.let { survivalBuffer[id] = it }
-            } finally {
-                // Always restore context so the live item remains usable until publishToLive replaces it
-                if (context != null) item.setDeepData("sertraline:context", context)
-            }
-        }
-        temporaryCache.clear()
+    @Synchronized
+    internal fun publish(registry: ConcurrentHashMap<String, AbstractSItem>) {
+        registry.putAll(temporaryCache)
+        Sertraline.itemMap = registry
     }
 
-    fun postReload() {
-        survivalBuffer.forEach { (id, json) ->
-            try {
-                val item = SItemFactory.deserialize(json) ?: return@forEach
-                temporaryCache[id] = item
-                Sertraline.itemMap[id] = item
-            } catch (_: Exception) {
-                // skip corrupted serialized items
-            }
-        }
-        survivalBuffer.clear()
+    @Synchronized
+    internal fun clearTemporary() {
+        temporaryCache.clear()
     }
 }

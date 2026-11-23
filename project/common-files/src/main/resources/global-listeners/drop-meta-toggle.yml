@@ -1,3 +1,5 @@
+# 默认禁用。取消注释下方完整示例即可启用。
+# Disabled by default. Uncomment the complete example below to enable it.
 # 全局监听器配置
 # Global listener configuration
 # 丢弃物品时切换 lore 显示模式
@@ -10,8 +12,9 @@
 #                    Listener priority (default NORMAL)
 #   accept-cancelled 是否处理已取消的事件（默认 false）
 #                    Whether to handle cancelled events (default false)
-#   async            是否异步执行脚本（默认 true）
-#                    Whether to run the script asynchronously (default true)
+#   async            是否异步执行脚本（默认 false）
+#                    Whether to run the script asynchronously (default false)
+#   throttle        最小触发间隔，毫秒（默认 0） / Minimum trigger interval in milliseconds (default 0)
 #   condition        Kether 条件，为 false 时跳过本监听器（可选）
 #                    Kether condition; the listener is skipped when it evaluates to false (optional)
 #   eval             脚本段：键为脚本引擎，值为脚本内容（多行字符串或行列表）

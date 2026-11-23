@@ -47,12 +47,20 @@ object ReloadCoordinator {
      *
      * @return The new [ReloadContext], already bound to [ReloadCollector], or null if another reload is running.
      */
+    @Synchronized
     fun tryBegin(): ReloadContext? {
         if (!gate.compareAndSet(false, true)) return null
         return ReloadContext(counter.incrementAndGet()).also { ReloadCollector.bind(it) }
     }
 
+    @Synchronized
+    internal fun <T> liveMutation(action: () -> T): T {
+        check(!isActive) { "Item registry changes must wait until configuration reload completes" }
+        return action()
+    }
+
     /** Ends the current reload and releases the gate (called only by the reload flow that acquired it). */
+    @Synchronized
     fun end() {
         ReloadCollector.unbind()
         gate.set(false)

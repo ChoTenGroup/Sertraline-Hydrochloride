@@ -182,8 +182,7 @@ object SertralineAttributeEngine {
         }
     }
 
-    private fun baseInterval(): Long = AttributeRegistry.all().filter { it.base.type != "constant" }
-        .map { it.base.updateInterval }.filter { it > 0 }.minOrNull() ?: Long.MAX_VALUE
+    private fun baseInterval(): Long = AttributeRegistry.snapshot().baseUpdateInterval
 
     private fun calculate(entity: LivingEntity, modifiers: List<AttributeModifier>, snapshot: AttributeRegistry.Snapshot, weapon: List<AttributeModifier> = emptyList()): Values {
         if (!enabled || !evaluating.add(entity.uniqueId)) {

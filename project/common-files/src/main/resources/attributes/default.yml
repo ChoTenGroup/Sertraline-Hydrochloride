@@ -1,5 +1,56 @@
+# 默认战斗包使用带 sertraline: 前缀的战斗属性 ID。
+# The default combat pack uses combat attribute IDs with the sertraline: prefix.
 # Definitions / 属性定义
 attributes:
+  # Default combat pack / 默认战斗属性包
+  # Damage rules live in global-listeners/default-combat.yml, not Kotlin.
+  # Defense rating: damage * 100 / (100 + defense).
+  sertraline:physical_defense:
+    name: 物理防御
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:magic_defense:
+    name: 魔法防御
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:fire_defense:
+    name: 火焰防御
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:poison_defense:
+    name: 中毒防御
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:fall_defense:
+    name: 摔落防御
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:physical_damage:
+    name: 附加物理伤害
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:magic_damage:
+    name: 附加魔法伤害
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:fire_damage:
+    name: 附加火焰伤害
+    base: 0
+    constraint: {min: 0, max: 10000}
+  sertraline:poison_damage:
+    name: 附加中毒伤害
+    base: 0
+    constraint: {min: 0, max: 10000}
+  # Decimal units: 0.05 = 5% chance; 0.5 = +50% critical damage.
+  sertraline:critical_chance:
+    name: 暴击概率
+    base: 0
+    constraint: {min: 0, max: 1}
+  sertraline:critical_bonus:
+    name: 暴击加成
+    base: 0.5
+    constraint: {min: 0, max: 10}
+
   demo:might:
     name: Might
     base: 10

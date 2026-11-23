@@ -54,7 +54,7 @@ fun loadTypeFile(file: File, regex: Regex, context: LoadContext? = null) {
         devLog("${file.name} not match regex, skipping...")
         return
     }
-    val raw = multiExtensionLoader(file) ?: return
+    val raw = multiExtensionLoader(file, context) ?: return
     val map = TemplateManager.resolveInMap(raw, context)
     if (map.isEmpty()) {
         severeL("Config_Load_Error_Empty", file.name)

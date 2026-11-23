@@ -1,9 +1,12 @@
 package io.github.zzzyyylllty.sertraline.util.dependencies
 
+import com.github.benmanes.caffeine.cache.Caffeine
 import com.github.retrooper.packetevents.event.PacketListener
 import com.github.retrooper.packetevents.event.PacketReceiveEvent
 import com.github.retrooper.packetevents.event.PacketSendEvent
+import com.github.retrooper.packetevents.protocol.component.ComponentTypes
 import com.github.retrooper.packetevents.protocol.item.ItemStack
+import com.github.retrooper.packetevents.protocol.item.type.ItemType
 import com.github.retrooper.packetevents.protocol.item.type.ItemTypes
 import com.github.retrooper.packetevents.protocol.packettype.PacketType
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientClickWindow
@@ -13,20 +16,20 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSe
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSetSlot
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerWindowItems
 import io.github.retrooper.packetevents.util.SpigotConversionUtil
-import io.github.zzzyyylllty.sertraline.Sertraline.consoleSender
-import io.github.zzzyyylllty.sertraline.debugMode.devLog
-import io.github.zzzyyylllty.sertraline.debugMode.devLogSync
+import io.github.zzzyyylllty.sertraline.Sertraline
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.listener.packet.c2s
 import io.github.zzzyyylllty.sertraline.listener.packet.s2c
-import io.github.zzzyyylllty.sertraline.logger.sendStringAsComponent
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.coroutineScope
+import io.github.zzzyyylllty.sertraline.logger.warningS
+import org.bukkit.Bukkit
 import org.bukkit.entity.Player
-import taboolib.expansion.DispatcherType
-import taboolib.expansion.DurationType
-import taboolib.expansion.submitChain
+import taboolib.common.platform.function.submit
 import taboolib.platform.util.isAir
-import kotlin.jvm.optionals.getOrNull
+import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class PacketEventsReceiveListener : PacketListener {
     override fun onPacketReceive(event: PacketReceiveEvent) {
@@ -63,148 +66,117 @@ class PacketEventsReceiveListener : PacketListener {
 }
 
 
-// TODO BUFFER REWRITE
 class PacketEventsSendListener : PacketListener {
-
     override fun onPacketSend(event: PacketSendEvent) {
+        if (!packetRenderingEnabled()) return
+        val player = event.getPlayer<Player>() ?: return
+        val viewer = event.user.uuid ?: return
+        var changed = false
+        fun rewrite(stack: ItemStack): ItemStack =
+            PacketItemRendering.render(viewer, player, stack).also { if (it !== stack) changed = true }
 
-        when (event.packetType) {
-
-            PacketType.Play.Server.WINDOW_ITEMS -> {
-                val player = event.getPlayer<Player>()
-                val packet = WrapperPlayServerWindowItems(event)
-
-                val item = packet.carriedItem.getOrNull()
-                val items = packet.items
-                val rewriteItem = item?.let { handleItemStack(player, it) }
-                val rewriteItems = mutableListOf<com.github.retrooper.packetevents.protocol.item.ItemStack>()
-                if (items == null || items.isEmpty()) return
-                items.forEach { rewriteItems.add(handleItemStack(player, it)) }
-                packet.items = rewriteItems
-                rewriteItem?.let {
-                    packet.setCarriedItem(it)
-                }
-
-                event.lastUsedWrapper = packet
-                event.markForReEncode(true)
+        val packet = when (event.packetType) {
+            PacketType.Play.Server.WINDOW_ITEMS -> WrapperPlayServerWindowItems(event).apply {
+                items = items.orEmpty().map(::rewrite)
+                carriedItem.orElse(null)?.let { setCarriedItem(rewrite(it)) }
             }
-//            PacketType.Play.Server.WINDOW_ITEMS -> {
-//                val player = event.getPlayer<Player>()
-//                val packet = WrapperPlayServerWindowItems(event)
-//                val items = packet.items ?: return
-//                if (items.isEmpty()) return
-//
-//                val carriedItem = packet.carriedItem.getOrNull()
-//
-////                devLog("=== WINDOW_ITEMS 数据包处理开始 ===")
-////                devLog("玩家: ${player.name}")
-////                devLog("物品总数: ${items.size}")
-////                devLog("携带物品: ${carriedItem != null}")
-//
-//                items.forEach { item -> handleItemStack(player, item) }
-//
-////                submitChain(DispatcherType.SYNC) {
-////                    val batchSize = 5
-////                    devLog("开始分批处理物品，批次大小: $batchSize")
-////
-////                    val deferredBatches: List<ItemStack> = items.chunked(batchSize)
-////                        .mapIndexed { batchIndex, subList ->
-////                            devLog("处理第 ${batchIndex + 1} 批，物品数量: ${subList.size}")
-////                            async {
-////                                subList.mapIndexed { index, item ->
-////                                    devLog("批次 $batchIndex - 物品 $index: ${item.type}")
-////
-////                                }
-////                            }
-////                        }
-////                        .flatMap { deferredList ->
-////                            deferredList
-////                        }
-////
-////                    devLog("所有批次异步任务已提交，等待结果...")
-//
-//                    val rewriteCarriedItem: ItemStack? = carriedItem?.let { item ->
-//                        devLog("开始处理携带物品: ${item.type}")
-//                        handleItemStack(player, item)
-//                    }
-//                    packet.items = deferredBatches
-//                        packet.setCarriedItem(it)
-//                    event.lastUsedWrapper = packet
-//                    event.markForReEncode(true)
-//            }
-//            PacketType.Play.Server.WINDOW_ITEMS -> {
-//                val player = event.getPlayer<Player>()
-//                val packet = WrapperPlayServerWindowItems(event)
-//                val items = packet.items ?: return
-//                if (items.isEmpty()) return
-//
-//                val carriedItem = packet.carriedItem.getOrNull()
-//
-//                submitChain(DispatcherType.SYNC) {
-//                    val batchSize = 5
-//                    val deferredBatches: List<ItemStack> = items.chunked(batchSize)
-//                        .map { subList ->
-//                            async {
-//                                subList.map { handleItemStack(player, it) }
-//                            }
-//                        }
-//
-//                        .flatMap { deferredList ->
-//                            deferredList
-//                        }
-//
-//                    // Handle carriedItem (separate async task)
-//                    val rewriteCarriedItem: ItemStack? = carriedItem?.let { item ->
-//                        handleItemStack(player, item)
-//                    }
-//                    while (deferredBatches.size >= items.size) {
-//                        wait(50, DurationType.MILLIS)
-//                    }
-//
-//                    packet.items = deferredBatches
-//                    rewriteCarriedItem?.let { packet.setCarriedItem(it) }
-//                    event.lastUsedWrapper = packet
-//                    event.markForReEncode(true)
-//                }
-//
-//            }
-
-            PacketType.Play.Server.SET_PLAYER_INVENTORY -> {
-                val player = event.getPlayer<Player>()
-                val packet = WrapperPlayServerSetPlayerInventory(event)
-
-                packet.stack = handleItemStack(player, packet.stack)
-
-                event.lastUsedWrapper = packet
-                event.markForReEncode(true)
+            PacketType.Play.Server.SET_PLAYER_INVENTORY -> WrapperPlayServerSetPlayerInventory(event).apply {
+                stack = rewrite(stack)
             }
-
-            PacketType.Play.Server.SET_CURSOR_ITEM -> {
-                val player = event.getPlayer<Player>()
-                val packet = WrapperPlayServerSetCursorItem(event)
-
-                packet.stack = handleItemStack(player, packet.stack)
-
-                event.lastUsedWrapper = packet
-                event.markForReEncode(true)
+            PacketType.Play.Server.SET_CURSOR_ITEM -> WrapperPlayServerSetCursorItem(event).apply {
+                stack = rewrite(stack)
             }
-
-            PacketType.Play.Server.SET_SLOT -> {
-                val player = event.getPlayer<Player>()
-                val packet = WrapperPlayServerSetSlot(event)
-
-                packet.item = handleItemStack(player, packet.item)
-
-                event.lastUsedWrapper = packet
-                event.markForReEncode(true)
+            PacketType.Play.Server.SET_SLOT -> WrapperPlayServerSetSlot(event).apply {
+                item = rewrite(item)
             }
+            else -> return
+        }
+        if (changed) {
+            event.lastUsedWrapper = packet
+            event.markForReEncode(true)
         }
     }
 }
-fun handleItemStack(
-    player: Player,
-    itemStack: com.github.retrooper.packetevents.protocol.item.ItemStack
-): com.github.retrooper.packetevents.protocol.item.ItemStack {
-    if (itemStack.type == ItemTypes.AIR) return itemStack
-    return SpigotConversionUtil.fromBukkitItemStack(SpigotConversionUtil.toBukkitItemStack(itemStack).s2c(player))
+
+private fun packetRenderingEnabled(): Boolean {
+    val config = SertralineSettings.currentSnapshot()
+    return Sertraline.isEnabled && config.packetRegister && (config.packetLore || config.packetComponent)
+}
+
+fun handleItemStack(player: Player, itemStack: ItemStack): ItemStack =
+    if (packetRenderingEnabled()) PacketItemRendering.render(player.uniqueId, player, itemStack) else itemStack
+
+/** Packet IO uses protocol stacks only. Bukkit conversion, scripts and NBT serialization run on the server thread. */
+internal object PacketItemRendering {
+    private data class RenderKey(val viewer: UUID, val type: ItemType, val amount: Int, val metadataHash: Int)
+    private data class Rendered(val original: ItemStack, val result: ItemStack?)
+    private data class Request(val key: RenderKey, val player: Player, val item: ItemStack)
+
+    private val cache by lazy {
+        Caffeine.newBuilder().maximumSize(4096).expireAfterWrite(2, TimeUnit.SECONDS)
+            .build<RenderKey, Rendered>().asMap()
+    }
+    private val queue = ArrayBlockingQueue<Request>(512)
+    private val pending = ConcurrentHashMap.newKeySet<RenderKey>()
+    private val scheduled = AtomicBoolean()
+    private val reportedErrors = ConcurrentHashMap.newKeySet<Class<out Throwable>>()
+
+    fun render(viewer: UUID, player: Player, item: ItemStack): ItemStack {
+        if (item.type == ItemTypes.AIR || item.amount <= 0) return item
+        val data = item.nbt ?: item.getComponent(ComponentTypes.CUSTOM_DATA).orElse(null) ?: return item
+        if (data.getStringTagOrNull("sertraline_id") == null) return item
+        val key = RenderKey(viewer, item.type, item.amount, data.hashCode())
+        val cached = cache[key]
+        if (cached != null && cached.original == item) return cached.result?.copy() ?: item
+        if (Bukkit.isPrimaryThread()) return compute(player, item, key)?.copy() ?: item
+
+        if (pending.add(key)) {
+            if (queue.offer(Request(key, player, item.copy()))) schedule()
+            else pending.remove(key)
+        }
+        return item
+    }
+
+    private fun schedule() {
+        if (!scheduled.compareAndSet(false, true)) return
+        submit(delay = 1) {
+            try {
+                if (!packetRenderingEnabled()) {
+                    clear()
+                    return@submit
+                }
+                val refresh = LinkedHashSet<Player>()
+                repeat(64) {
+                    val request = queue.poll() ?: return@repeat
+                    pending.remove(request.key)
+                    if (!request.player.isOnline) return@repeat
+                    if (compute(request.player, request.item, request.key) != null) refresh += request.player
+                }
+                refresh.forEach(Player::updateInventory)
+            } finally {
+                scheduled.set(false)
+                if (queue.isNotEmpty()) schedule()
+            }
+        }
+    }
+
+    private fun compute(player: Player, item: ItemStack, key: RenderKey): ItemStack? {
+        val result = try {
+            val original = SpigotConversionUtil.toBukkitItemStack(item)
+            val rendered = original.s2c(player)
+            if (rendered === original) null else SpigotConversionUtil.fromBukkitItemStack(rendered)
+        } catch (e: Exception) {
+            if (reportedErrors.add(e.javaClass)) warningS("Could not render a Sertraline packet item: ${e.message}")
+            null
+        }
+        cache[key] = Rendered(item.copy(), result)
+        return result
+    }
+
+    fun clear() {
+        cache.clear()
+        queue.clear()
+        pending.clear()
+        reportedErrors.clear()
+    }
 }

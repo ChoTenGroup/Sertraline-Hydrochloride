@@ -15,10 +15,8 @@ import kotlin.math.roundToInt
 
 val dependencies = listOf(
     "adventure",
-    // "arim",
     "asm",
     "caffeine",
-    "datafixerupper",
     "fluxon",
     // "graaljs",
     "gson",

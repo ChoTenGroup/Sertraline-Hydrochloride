@@ -207,15 +207,17 @@ object ManagerCommand {
                 val name = sender.name
                 val type = resolveType(name)
                 val sub = resolveSub(name)
-                try {
-                    val uuid = if (type == ManagerType.PRIVATE) resolveCommandUuid(sender, name) else null
-                    if (Sertraline.manager.deleteItemResult(type, sub, itemId, uuid)) {
-                        sender.sendStringAsComponent(sender.langText("Manager_Delete_Success", itemId))
-                    } else {
-                        sender.sendStringAsComponent(sender.langText("Manager_Delete_Not_Found", itemId))
+                submitAsync {
+                    try {
+                        val uuid = if (type == ManagerType.PRIVATE) resolveCommandUuid(sender, name) else null
+                        if (Sertraline.manager.deleteItemResult(type, sub, itemId, uuid)) {
+                            sender.sendStringAsComponent(sender.langText("Manager_Delete_Success", itemId))
+                        } else {
+                            sender.sendStringAsComponent(sender.langText("Manager_Delete_Not_Found", itemId))
+                        }
+                    } catch (e: Exception) {
+                        sender.sendStringAsComponent("<red>${e.message}</red>")
                     }
-                } catch (e: Exception) {
-                    sender.sendStringAsComponent("<red>${e.message}</red>")
                 }
             }
         }
@@ -292,9 +294,17 @@ object ManagerCommand {
             val uuid = if (type == ManagerType.PRIVATE) resolveCommandUuid(sender, name) else null
             when (type) {
                 ManagerType.PUBLIC -> Sertraline.manager.public.getAll(sub).keys.toList()
-                ManagerType.PRIVATE -> Sertraline.manager.privateManager.getAll(uuid!!, sub).keys.toList()
+                ManagerType.PRIVATE -> Sertraline.manager.privateManager.cachedIds(uuid!!, sub)
             }
         } catch (_: Exception) { emptyList() }
+    }
+
+    @taboolib.common.platform.event.SubscribeEvent
+    fun forgetSelection(event: org.bukkit.event.player.PlayerQuitEvent) {
+        val name = event.player.name
+        playerManager.remove(name)
+        playerSub.remove(name)
+        playerUuid.remove(name)
     }
 
     private fun resolveType(playerName: String): ManagerType {

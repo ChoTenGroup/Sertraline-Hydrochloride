@@ -8,6 +8,7 @@ import io.github.zzzyyylllty.sertraline.data.AbstractSItem
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.impl.removeComponentNMS
 import io.github.zzzyyylllty.sertraline.item.itemSerializer
+import org.bukkit.Bukkit
 import io.github.zzzyyylllty.sertraline.impl.setComponent
 import io.github.zzzyyylllty.sertraline.impl.setComponentNMS
 import io.github.zzzyyylllty.sertraline.util.VersionHelper
@@ -31,7 +32,7 @@ import org.bukkit.NamespacedKey
 import kotlin.math.roundToInt
 
 private val carriedItemFieldInContainerClick by lazy { if (VersionHelper.isUniversal) "carriedItem" else "item" }
-val suffix by lazy { console.asLangText("Editor_Item_Suffix").asListEnhanced()?.toComponent() ?: emptyList() }
+val suffix get() = console.asLangText("Editor_Item_Suffix").asListEnhanced()?.toComponent() ?: emptyList()
 
 /**
  * Gets the SERTRALINE_OITEM Tag from the incoming virtual item's Tag to restore the original item
@@ -48,44 +49,36 @@ fun ItemStack.c2s(): ItemStack {
  * Converts a server-side item into a virtual item
  * */
 fun ItemStack.s2c(player: Player?): ItemStack {
-    val oItem = this.clone()
-    if (type == Material.AIR) return oItem
-    val tag = this.getItemTag(true)
-    val id = tag["sertraline_id"]?.asString() ?: return oItem
-    val sItem = itemSerializer(id, player) ?: return oItem
-    var modified = false
-    if (SertralineSettings.packetLore) {
-        // Apply to the CLONE. This used to call `PlatformCompat.setLore(this, it)` and
-        // `asNMSCopy(this)`, mutating the server-side ItemStack that the packet pipeline handed in —
-        // the packet-sent lore then leaked back into the real inventory item (and into whatever the
-        // caller did with the stack afterwards).
-        handleLoreFormat(sItem, player, PlatformCompat.getLore(oItem), true, oItem)?.let {
-            PlatformCompat.setLore(oItem, it)
-            modified = true
+    val settings = SertralineSettings.currentSnapshot()
+    if ((!settings.packetLore && !settings.packetComponent) || type == Material.AIR || !Bukkit.isPrimaryThread()) return this
+    val tag = getItemTag(true)
+    if (tag["sertraline_id"] == null || tag["sertraline_oitem"] != null) return this
+    val sItem = itemSerializer(this, player) ?: return this
+
+    var rendered = this
+    if (settings.packetLore) {
+        val existingLore = PlatformCompat.getLore(this)
+        val lore = handleLoreFormat(sItem, player, existingLore, true, this)
+        if (lore != null && lore != existingLore) {
+            rendered = clone()
+            PlatformCompat.setLore(rendered, lore)
         }
     }
-    val nmsItem = asNMSCopy(oItem)
-    val serialized = oItem.serializeToByteArray()
-    val modifiedItem = visualComponentSetterNMS(nmsItem, sItem, serialized)
-    if (tag["sertraline_browse_item"] != null && PlatformCompat.getLore(oItem) != PlatformCompat.getLore(modifiedItem)) { // if it is a browse item and its lore was modified
-        val lore = PlatformCompat.getLore(modifiedItem)?.toMutableList() ?: mutableListOf()
-        lore.addAll(suffix)
-        PlatformCompat.setLore(modifiedItem, lore)
-        modified = true
-    }
-    // Every client-side-visualized item must carry the restore tag, not just items
-    // with a `visual:` map: the client returns this modified copy in click packets
-    // (e.g. DOUBLE_CLICK grab-all carries the merged visual stack as carriedItem),
-    // and c2s() needs the tag to restore the real item. Without it, the server
-    // would adopt a client-only fake item on its cursor.
-    if (modified) {
-        val outTag = modifiedItem.getItemTag()
-        if (outTag["sertraline_oitem"] == null) {
-            outTag["sertraline_oitem"] = serialized
-            return modifiedItem.setItemTag(outTag)
+
+    val visual = sItem.data["visual"] as? Map<*, *>
+    if (settings.packetComponent && VersionHelper.isOrAbove12005() && !visual.isNullOrEmpty()) {
+        val original = serializeToByteArray()
+        val modified = visualComponentSetterNMS(asNMSCopy(rendered), sItem, original)
+        if (tag["sertraline_browse_item"] != null && PlatformCompat.getLore(rendered) != PlatformCompat.getLore(modified)) {
+            val lore = PlatformCompat.getLore(modified).orEmpty() + suffix
+            PlatformCompat.setLore(modified, lore)
         }
+        return modified
     }
-    return modifiedItem
+    if (rendered === this) return this
+    val restore = rendered.getItemTag()
+    restore["sertraline_oitem"] = serializeToByteArray()
+    return rendered.setItemTag(restore)
 }
 fun visualComponentSetterNMS(item: Any, sItem: AbstractSItem,serialized: ByteArray): ItemStack {
 

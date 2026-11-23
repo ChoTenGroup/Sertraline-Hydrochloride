@@ -33,10 +33,10 @@ public class SertralineAPIImpl : SertralineAPI {
 }
 
 public object SertralineApiVersionN {
-    const val MAJOR = 3
-    const val MINOR = 13
-    const val PATCH = 0
-    const val FIX = 2
+    const val MAJOR = BuildVersion.MAJOR
+    const val MINOR = BuildVersion.MINOR
+    const val PATCH = BuildVersion.PATCH
+    const val FIX = BuildVersion.FIX
     val SERTRALINE_API_VER = SertralineApiVersion(MAJOR, MINOR, PATCH, FIX)
 }
 
@@ -105,7 +105,9 @@ public interface SertralineAPI {
         if (!file.isFile || !file.canRead()) return false
         val extension = file.extension.lowercase()
         if (extension !in setOf("yml", "yaml", "json", "toml", "tml")) return false
-        return loadSertralineItemFile(file, Regex(".*"))
+        return io.github.zzzyyylllty.sertraline.logger.ReloadCoordinator.liveMutation {
+            loadSertralineItemFile(file, Regex(".*"))
+        }
     }
 
     /**
@@ -470,7 +472,7 @@ public interface SertralineAPI {
      */
     @Deprecated("Use SertralineItemAPI instead")
     fun registerItem(id: String, item: ModernSItem) {
-        Sertraline.itemMap[id] = item
+        SertralineItemAPI.register(item, id)
     }
 
     /**
@@ -485,7 +487,7 @@ public interface SertralineAPI {
      */
     @Deprecated("Use SertralineItemAPI instead")
     fun updateSItem(id: String, item: ModernSItem): ModernSItem? {
-        return Sertraline.itemMap.put(id, item) as? ModernSItem
+        return SertralineItemAPI.update(id, item) as? ModernSItem
     }
 
     /**
@@ -516,7 +518,7 @@ public interface SertralineAPI {
      */
     @Deprecated("Use SertralineItemAPI instead")
     fun unregisterItem(id: String): ModernSItem? {
-        return Sertraline.itemMap.remove(id) as? ModernSItem
+        return SertralineItemAPI.unregister(id) as? ModernSItem
     }
 
     /**

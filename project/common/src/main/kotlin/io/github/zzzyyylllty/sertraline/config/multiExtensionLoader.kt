@@ -8,38 +8,40 @@ import io.github.zzzyyylllty.sertraline.util.textIsBlank
 import java.io.File
 import io.github.zzzyyylllty.sertraline.util.toLowerCase
 
-fun multiExtensionLoader(file: File): Map<String, Any?>? {
+fun multiExtensionLoader(file: File): Map<String, Any?>? = multiExtensionLoader(file, null)
+
+internal fun multiExtensionLoader(file: File, context: LoadContext?, content: String? = null): Map<String, Any?>? {
     return try {
         val extension = file.extension.lowercase()
         val format = when (extension) {
             "yml" -> "yaml"
             "tml" -> "toml"
+            "conf" -> "yaml"
             else -> extension
         }
 
         if (!isSupportedFormat(format)) {
+            context?.invalidConfiguration = true
             severeL("Config_Load_Error_Extension", file.extension)
             return null
         }
 
-        val content = file.readText()
+        val text = (content ?: file.readText()).removePrefix("\uFEFF")
         // textIsBlank: Java 8-safe implementation (String.isBlank is a Java 11 member method, see StringUtil.kt)
-        if (content.textIsBlank()) {
-            severeL("Config_Load_Error_Empty", file.name)
-            return null
-        }
+        if (text.textIsBlank() && format != "json") return emptyMap()
         // Skip files with only comments — not real YAML content
-        if (content.lineSequence().none { line ->
+        if (format != "json" && text.lineSequence().none { line ->
                 val trimmed = line.trimStart { it == ' ' || it == '\t' }
                 trimmed.isNotEmpty() && !trimmed.startsWith("#")
             }) {
             devLog("Skipping ${file.name}: no YAML content (comments only)")
-            return null
+            return emptyMap()
         }
 
-        parseToMap(content, format)
+        requireNotNull(parseToMap(text, format)) { "Expected a configuration mapping" }
     } catch (e: Exception) {
-        severeL("Config_Load_Error_Parse", file.name, e.message ?: "Unknown error")
+        context?.invalidConfiguration = true
+        severeL("Config_Load_Error_Parse", file.path, e.message ?: "Unknown error")
         null
     }
 }

@@ -1,6 +1,7 @@
 package io.github.zzzyyylllty.sertraline.util
 
 import io.github.zzzyyylllty.sertraline.Sertraline.gjsScriptCache
+import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.util.serialize.generateHash
 import org.graalvm.polyglot.Context
@@ -116,14 +117,18 @@ object GraalJsUtil {
         }
     }
 
-    fun newGraalContext(): Context {
+    fun newGraalContext(): Context = newGraalContext(javaTypeAllowed())
+
+    private fun javaTypeAllowed(): Boolean = SertralineSettings.rawBoolean("script.graaljs.allow-java-type", true)
+
+    private fun newGraalContext(allowJavaType: Boolean): Context {
 
         val context = Context.newBuilder(GJS_LANG_ID)
 //#            .allowAllAccess(true) // too permissive, replaced by the fine-grained config below
 //            .allowHostAccess(hostAccess)
             .engine(globalGJSEngine)
             .allowHostAccess(hostAccess ?: HostAccess.ALL) // use fine-grained config
-            .allowHostClassLookup { name -> name.startsWith("io.github.zzzyyylllty.sertraline") } // only allow lookup of plugin classes; System/Bukkit/Runtime cannot be discovered by name
+            .allowHostClassLookup { allowJavaType }
             .allowHostClassLoading(false) // prevent scripts from loading arbitrary classes via Class.forName
             .build()
         liveContexts.add(context)
@@ -190,10 +195,18 @@ object GraalJsUtil {
     }
 
     /** Graal context re-used per-thread, avoiding creating/destroying a Context on every eval (context creation is the main overhead) */
-    private val contextHolder = ThreadLocal<Context>()
+    private data class CachedContext(val context: Context, val allowJavaType: Boolean)
+    private val contextHolder = ThreadLocal<CachedContext>()
     /** Restore bindings after nested calls. */
     internal fun <T> withBindings(vars: Map<String, Any?>, block: (Context) -> T): T {
-        val context = contextHolder.get() ?: newGraalContext().also { contextHolder.set(it) }
+        val allowJavaType = javaTypeAllowed()
+        val cached = contextHolder.get()
+        val context = if (cached != null && cached.allowJavaType == allowJavaType) cached.context else {
+            // Java.type caches resolved classes in a Context. Recreate it when the
+            // setting changes so reload can also revoke previously resolved classes.
+            cached?.context?.close()
+            newGraalContext(allowJavaType).also { contextHolder.set(CachedContext(it, allowJavaType)) }
+        }
         val bindings = context.getBindings(GJS_LANG_ID)
         val previous = linkedMapOf<String, Value?>()
         try {

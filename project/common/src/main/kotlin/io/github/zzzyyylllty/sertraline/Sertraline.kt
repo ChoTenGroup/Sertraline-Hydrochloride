@@ -6,6 +6,7 @@ import io.github.zzzyyylllty.sertraline.config.ConfigUtil
 import io.github.zzzyyylllty.sertraline.config.CustomEventsConfig
 import io.github.zzzyyylllty.sertraline.config.LoadContext
 import io.github.zzzyyylllty.sertraline.config.TemplateManager
+import io.github.zzzyyylllty.sertraline.config.common.ConfigReloadGuard
 import io.github.zzzyyylllty.sertraline.config.common.SertralineConfigManager
 import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.config.loadCraftingStationFiles
@@ -53,6 +54,7 @@ import io.github.zzzyyylllty.sertraline.logger.ReloadContext
 import io.github.zzzyyylllty.sertraline.logger.ReloadCoordinator
 import io.github.zzzyyylllty.sertraline.logger.infoL
 import io.github.zzzyyylllty.sertraline.logger.infoLSync
+import io.github.zzzyyylllty.sertraline.logger.infoS
 import io.github.zzzyyylllty.sertraline.logger.infoSSync
 import io.github.zzzyyylllty.sertraline.logger.warningSSync
 import io.github.zzzyyylllty.sertraline.logger.severeL
@@ -63,6 +65,7 @@ import io.github.zzzyyylllty.sertraline.logger.warningL
 import io.github.zzzyyylllty.sertraline.database.DatabaseManager
 import io.github.zzzyyylllty.sertraline.util.SertralineLocalDependencyHelper
 import io.github.zzzyyylllty.sertraline.util.TabooLibCacheCheck
+import io.github.zzzyyylllty.sertraline.util.CraftItemMirrorCompat
 import io.github.zzzyyylllty.sertraline.util.dependencies
 import io.github.zzzyyylllty.sertraline.util.ItemTagManager
 import io.github.zzzyyylllty.sertraline.util.ScriptHelper
@@ -247,10 +250,11 @@ object Sertraline : Plugin() {
     val chotenAttributeProvider by lazy { ChotenAttributeProvider() }
     @Volatile var devMode = false
     @Volatile var allowAsyncLog = true
-    var isEnabled = false
-    val fileLastModified: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
+    @Volatile var isEnabled = false
+    @Volatile private var disabling = false
+    @Volatile internal var parsedWorkspaceFiles: Map<String, io.github.zzzyyylllty.sertraline.config.ParsedWorkspaceFile> = emptyMap()
     /** Item ID -> absolute source file path (used for incremental load merging; written only in item incremental mode). */
-    val itemSourceFile: ConcurrentHashMap<String, String> = ConcurrentHashMap()
+    @Volatile var itemSourceFile: ConcurrentHashMap<String, String> = ConcurrentHashMap()
 
     // Bounded script caches — Caffeine provides max-size + TTL eviction to prevent unbounded memory growth.
     //
@@ -307,8 +311,10 @@ object Sertraline : Plugin() {
     }
 
     override fun onLoad() {
+        disabling = false
         // Report stale TabooLib module caches first: they break the class visitor during construction.
         TabooLibCacheCheck.check()
+        CraftItemMirrorCompat.install()
         // Bind config files before DatabaseManager (which reads config via lazy dbConfig) and
         // before any other potential consumer; PacketEventsUtil also binds early at LOAD, but
         // binding here makes the ordering explicit rather than relying on that side effect.
@@ -332,6 +338,10 @@ object Sertraline : Plugin() {
     }
 
     override fun onDisable() {
+        disabling = true
+        isEnabled = false
+        io.github.zzzyyylllty.sertraline.listener.attribute.stopAttributeTick()
+        if (io.github.zzzyyylllty.sertraline.util.DependencyHelper.pe) io.github.zzzyyylllty.sertraline.util.dependencies.PacketItemRendering.clear()
         // Stop metrics submission first so shutdown noise is not reported
         SertralineMetrics.shutdown()
         // Give the vanilla attribute base values back before we stop listening, otherwise
@@ -384,6 +394,33 @@ object Sertraline : Plugin() {
             warningSSync("[onDisable] Failed to close the database: ${e.message}")
         }
         infoLSync("Disable")
+        TemplateManager.clearTemplates()
+        TemplateManager.clearProviders()
+        io.github.zzzyyylllty.sertraline.gui.ItemExplorer.clearSessions()
+        io.github.zzzyyylllty.sertraline.util.ItemTagManager.clear()
+        io.github.zzzyyylllty.sertraline.function.fluxon.FluxonShell.scriptCache.clear()
+        io.github.zzzyyylllty.sertraline.listener.sertraline.builder.ExternalItemProcessors.clear()
+        ScriptHelper.clearScripts()
+        FastMiniMessage.applyConfig(false, 0)
+        itemMap.clear()
+        itemCache.clear()
+        itemSourceFile.clear()
+        parsedWorkspaceFiles = emptyMap()
+        itemExpectedRevision.clear()
+        mappings.clear()
+        loreFormats.clear()
+        craftingStations.clear()
+        tiers.clear()
+        types.clear()
+        levels.clear()
+        ketherScriptCache.clear()
+        jsScriptCache.clear()
+        gjsScriptCache.clear()
+        jexlScriptCache.clear()
+        itemManager.unregisterAllProcessor()
+        tagManager.unregisterAllProcessor()
+        AttributeManager.unregisterAll()
+        SertralineConfigManager.reset()
     }
     /*
     fun compat() {
@@ -398,6 +435,9 @@ object Sertraline : Plugin() {
         CompatLog.register { node, args -> warningL(node, *args) }
         // Normal config files must be bound before any other consumer reads SertralineSettings
         SertralineConfigManager.bind()
+        registerNativeAdapter()
+        registerNativeTagAdapter()
+        registerNativeAttributeProviders()
         try {
             reloadCustomConfig(false)
         } catch (e: Exception) {
@@ -411,7 +451,7 @@ object Sertraline : Plugin() {
                 SertralineSettings.attributeArmorChangePolling
             ) { handleArmorSlotChanged(it) }
         } catch (e: Exception) {
-            severeL("Failed to register platform event hooks: ${e.message}")
+            severeS("Failed to register platform event hooks: ${e.message}")
         }
     }
 
@@ -426,70 +466,24 @@ object Sertraline : Plugin() {
                 return@submit
             }
             try {
-                runReload(context, sender)
+                runReload(sender)
+            } catch (e: Exception) {
+                severeL("Config_Load_Error_Parse", "reload", e.message ?: e.javaClass.simpleName)
+                ReloadCollector.printSummary(sender)
             } finally {
                 ReloadCoordinator.end()
             }
         }
     }
 
-    private fun runReload(context: ReloadContext, sender: CommandSender?) {
-            // Normal config files (config.yml / experimental.yml): release, auto-update missing nodes, refresh SertralineSettings
-            try {
-                SertralineConfigManager.reload()
-            } catch (e: Exception) {
-                // A corrupt config.yml must not abort the whole reload; keep last-good SertralineSettings and continue.
-                severeL("Config_Load_Error_Parse", "config", e.message ?: "Unknown error")
-            }
-            devMode = SertralineSettings.debug
-            allowAsyncLog = SertralineSettings.asyncLogging
+    private fun runReload(sender: CommandSender?) {
+        val configuration = SertralineConfigManager.prepare()
+        val customEvents = ConfigReloadGuard.prepare("custom-events.yml")
+        val itemManagers = ConfigReloadGuard.prepare("manager.yml")
+        val loadContext = LoadContext()
+        var candidateFailed = false
 
-            val fastMinimessage = SertralineSettings.fastMinimessage
-            FastMiniMessage.applyConfig(
-                fastMinimessage,
-                SertralineSettings.fastMinimessageCacheSize
-            )
-            if (VersionHelper.isLegacy() && fastMinimessage) {
-                warningL("Experimental_FastMiniMessage_Legacy_Unsupported")
-            }
-
-            // Recreate debounce/throttle functions that bind config values at creation time
-            try { resetDebounceRefreshStat() } catch (_: Throwable) {}
-
-            // Custom event registration config is an independent file
-            try {
-                CustomEventsConfig.config.reload()
-            } catch (e: Exception) {
-                severeL("Config_Load_Error_Parse", "custom-events.yml", e.message ?: "Unknown error")
-            }
-            // Item manager config (manager.yml) �?also reload so changes apply without a restart
-            try {
-                ManagerConfig.config.reload()
-            } catch (e: Exception) {
-                severeL("Config_Load_Error_Parse", "manager.yml", e.message ?: "Unknown error")
-            }
-
-            // save public-temporary items, restore after reload
-            manager.preReload()
-
-            // ---- Candidate build phase: all loaders write to the local LoadContext and do not touch the live registry. ----
-            // If any loader throws an uncaught exception, discard the candidate and keep the live registry at its previous complete state (last-good).
-            val loadContext = LoadContext()
-            var candidateFailed = false
-
-            // compiled-script caches are pure derived data �?safe to drop upfront
-            ketherScriptCache.clear()
-            jsScriptCache.clear()
-            gjsScriptCache.clear()
-            jexlScriptCache.clear()
-
-            itemManager.unregisterAllProcessor()
-            tagManager.unregisterAllProcessor()
-            AttributeManager.unregisterAll()
-            registerNativeAdapter()
-            registerNativeTagAdapter()
-            registerNativeAttributeProviders()
-
+        SertralineSettings.withCandidate(configuration.settings) {
             // Start loading all files.
             SertralineAllFileLoadPreEvent(loadContext).call()
 
@@ -551,35 +545,33 @@ object Sertraline : Plugin() {
             }
             ReloadCollector.addStat(console.asLangText("Reload_Stat_CraftingStations", loadContext.craftingStations.size))
 
-            if (candidateFailed) {
-                // Candidate build failed: do not publish or trigger SertralineReloadEvent / recipe/listener reloads.
-                // Keep the live registry at last-good; only restore temporary items and print this pass's report.
-                severeL("Reload_Candidate_Failed")
-                SertralineAllFileLoadPostEvent(loadContext, published = false).call()
-                manager.postReload()
-                ReloadCollector.printSummary(sender)
-                return
-            }
+        }
 
-            // ---- Publish phase: replace the live registry with the candidate in one operation. ----
-            // Note: an `if (loadContext.itemsLoadedIncrementally) mergeLiveItemsForIncrementalPublish(...)` branch used to exist,
-            // but this flag is set only when `context == null`; reload always has a context,
-            // so the branch never ran (incremental-loading does not affect reload; candidates are always parsed in full).
-            try {
-                loadContext.publishToLive()
-                itemExpectedRevision.clear()
+        if (candidateFailed || loadContext.invalidConfiguration) {
+            severeL("Reload_Candidate_Failed")
+            SertralineAllFileLoadPostEvent(loadContext, published = false).call()
+            ReloadCollector.printSummary(sender)
+            return
+        }
 
-                // crafting sessions hold references to station objects from the old registry;
-                // cancel them only after a successful publish (failed builds keep sessions alive)
-                CraftingStationManager.cancelAll()
-            } finally {
-                // restore public-temporary items into the freshly published registry.
-                // MUST be in `finally`: preReload() moved every public-temporary item into
-                // survivalBuffer and cleared temporaryCache, so a throw between publishToLive() and
-                // here would drop those items forever (they are not on disk anywhere).
-                // postReload() clears the buffer, so this is safe to run on any path.
-                manager.postReload()
+        onServerThread {
+            check(!disabling) { "Plugin was disabled during reload" }
+            loadContext.publishToLive()
+            CustomEventsConfig.publish(customEvents)
+            ManagerConfig.publish(itemManagers)
+            SertralineConfigManager.publish(configuration)
+            devMode = SertralineSettings.debug
+            allowAsyncLog = SertralineSettings.asyncLogging
+
+            FastMiniMessage.applyConfig(SertralineSettings.fastMinimessage, SertralineSettings.fastMinimessageCacheSize)
+            if (VersionHelper.isLegacy() && SertralineSettings.fastMinimessage) {
+                warningL("Experimental_FastMiniMessage_Legacy_Unsupported")
             }
+            resetDebounceRefreshStat()
+            ketherScriptCache.clear()
+            if (io.github.zzzyyylllty.sertraline.util.DependencyHelper.pe) io.github.zzzyyylllty.sertraline.util.dependencies.PacketItemRendering.clear()
+            CraftingStationManager.cancelAll()
+        }
 
             // warm up GraalJS scripts: eval each cached Source once in a throwaway Context
             // to trigger Truffle AST compilation, so the first real eval after reload is faster
@@ -596,27 +588,9 @@ object Sertraline : Plugin() {
             if (SertralineSettings.itemUpdateEnabled && !SertralineSettings.itemUpdateAutoTrack) {
                 warningL("Warning_Item_Update_AutoTrack_Disabled")
             }
+            if (!SertralineSettings.itemUpdateAutoTrack) itemExpectedRevision.clear()
             try { initRevisionAutoTracker() } catch (e: Exception) {
                 severeL("Config_Load_Error_Parse", "revision-auto-tracker", e.message ?: "Unknown error")
-            }
-
-            // Attribute definitions (attributes/*.yml) and item `attribute:` sections may have
-            // changed: re-apply to online players, otherwise the new values only show up on the
-            // next equip/hotbar change.
-            try {
-                for (player in Bukkit.getOnlinePlayers()) AttributeManager.refreshAttributes(player)
-            } catch (e: Exception) {
-                warningSSync("Attribute refresh after reload failed: ${e.message}")
-            }
-
-            // Item updater: recreate the periodic scan with the (possibly changed) interval, then
-            // refresh online players once — the revision table was just recomputed, so items in
-            // their inventories are stale until the next login/hold/interact otherwise.
-            try {
-                ItemUpdateScheduler.restart()
-                if (SertralineSettings.itemUpdateOnReload) ItemUpdateScheduler.scanOnlinePlayersLater()
-            } catch (e: Exception) {
-                severeL("Config_Load_Error_Parse", "item-update-scheduler", e.message ?: "Unknown error")
             }
 
             // ---- Async prepare: resolve recipe candidates without touching the Bukkit registry. ----
@@ -633,20 +607,24 @@ object Sertraline : Plugin() {
                 }
             }
 
-            // Bukkit API operations such as recipe registration and event firing must run on the main thread
-            if (Bukkit.isPrimaryThread()) {
+            onServerThread {
+                if (disabling) return@onServerThread
+                Bukkit.getOnlinePlayers().forEach(AttributeManager::refreshAttributes)
+                ItemUpdateScheduler.restart()
+                if (SertralineSettings.itemUpdateOnReload) ItemUpdateScheduler.scanOnlinePlayersLater()
                 runRecipeSyncTasks(sender, recipeCandidates, loadContext)
-            } else {
-                val plugin = Bukkit.getPluginManager().getPlugin("Sertraline")
-                if (plugin != null) {
-                    Bukkit.getScheduler().callSyncMethod(plugin, Callable {
-                        runRecipeSyncTasks(sender, recipeCandidates, loadContext)
-                        null
-                    }).get()
-                } else {
-                    severeL("Config_Load_Error_Parse", "recipes", "Sertraline plugin instance not found for sync task")
-                }
             }
+    }
+
+    private fun onServerThread(action: () -> Unit) {
+        if (Bukkit.isPrimaryThread()) {
+            action()
+        } else {
+            val reporting = ReloadCollector.current
+            Bukkit.getScheduler().callSyncMethod(BukkitPlugin.getInstance(), Callable {
+                ReloadCollector.withContext(reporting, action)
+            }).get()
+        }
     }
 
     private fun runRecipeSyncTasks(sender: CommandSender?, recipeCandidates: List<Any?>?, loadContext: LoadContext) {
@@ -715,9 +693,9 @@ object Sertraline : Plugin() {
     fun initItemTags() {
         try {
             ItemTagManager.initializeVanillaTags()
-            infoL("ItemTagManager initialized successfully")
+            infoS("ItemTagManager initialized successfully")
         } catch (e: Exception) {
-            severeL("Failed to initialize ItemTagManager: ${e.message}")
+            severeS("Failed to initialize ItemTagManager: ${e.message}")
         }
     }
 

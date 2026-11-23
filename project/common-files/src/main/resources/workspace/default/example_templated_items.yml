@@ -1,5 +1,10 @@
 # ==============================
 # 模板使用示例 (Template Usage Examples)
+#
+# 核心规则 / Core rule:
+#   `arguments` 只是占位符替换字典，模板体里没写 %{xxx} 的地方，传 xxx 参数不会有任何效果。
+#   `arguments` is only a substitution dictionary: a parameter does nothing unless the template body
+#   references it as %{param}. Passing an unused parameter logs a warning at load time.
 # ==============================
 
 # 基本用法：继承模板，仅覆盖 name
@@ -36,38 +41,38 @@ flame_sword:
   sertraline:
     tier: A
 
+# `$template` 也可以直接写成模板名字符串（等价于 use: xxx）
+# `$template` also accepts the template name as a plain string (same as `use: xxx`)
+short_hand_sword:
+  $template: iron_melee
+  sertraline:
+    tier: C
+
 # ==============================
 # $t 类型转换器示例 (Type ($t) Transformer Examples)
 # ==============================
 
-# $t: when — 基于 _ID 的值映射
-# $t: when - value mapping based on _ID
-wild_guardian_sword:
+# $t: when — 基于 _ID 的值映射（一个模板按物品 ID 出不同名字）
+# $t: when - value mapping based on _ID (one template, different names per item id)
+guardian_sword:
   $template:
-    use: basic_melee_weapon
+    use: guardian_weapon
     arguments:
       material: STONE_SWORD
       damage: 10
       speed: 1.6
-      name:
-        $t:
-          type: when
-          source: "%{_ID}"
-          when:
-            wild_guardian_sword: "&2Wild Guardian"
-            forest_guardian_sword: "&aForest Guardian"
-          fallback: "Unknown Guardian"
   sertraline:
     tier: A
 
+# 同一个 when 表达式的另一个分支（分支按 _ID 命中）
+# Another branch of the same when expression (the branch matches by _ID)
 forest_guardian_sword:
   $template:
-    use: basic_melee_weapon
+    use: guardian_weapon
     arguments:
       material: WOODEN_SWORD
       damage: 10
       speed: 1.6
-      name: "&aForest Guardian"
   sertraline:
     tier: A
 
@@ -103,11 +108,16 @@ hunter_knife:
 
 # $t: 条件判断
 # $t: condition
+# 注意：`$t` 按声明顺序求值，只能看到它**之前**声明的参数（以及 _ID）。
+# Note: `$t` is evaluated in declaration order and only sees arguments declared before it (plus _ID).
+# 所以这里 `enchanted` 必须写在 `name` 之前。
+# That is why `enchanted` must be declared before `name` here.
 magic_staff:
   $template:
     use: basic_melee_weapon
     arguments:
       material: STICK
+      enchanted: "true"
       damage:
         $t:
           type: condition
@@ -126,16 +136,25 @@ magic_staff:
 
 # ==============================
 # $c 类型转换示例 (Cast ($c) Type Converter Examples)
+#
+# `$c` 转换的是"已有来源"的值：要么是同一条目里 `$t` 的结果，要么是从外层模板继承来的同名参数。
+# 单独写 `$c` 而没有来源时没有东西可转换，参数会被丢弃并输出一条 warning。
+# `$c` converts an existing value: either the `$t` result in the same value, or a same-named argument
+# inherited from an enclosing template. `$c` without a source has nothing to convert; the parameter is
+# dropped with a warning.
 # ==============================
 
-# $c: int 取整
-# $c: int with rounding
+# $t + $c 组合（先转换后转类型）：对 $t 的输出做取整
+# $t + $c combined (transform then cast): round the $t output
 precision_blade:
   $template:
     use: basic_melee_weapon
     arguments:
       material: IRON_SWORD
       damage:
+        $t:
+          type: upper
+          value: "12.4"
         $c:
           type: int
           round: ceil
@@ -144,8 +163,8 @@ precision_blade:
   sertraline:
     tier: B
 
-# $c: 双精度浮点数
-# $c: double
+# $c 可通过 value 直接指定要转换的值。
+# Use value to supply a converter input directly.
 light_dagger:
   $template:
     use: basic_melee_weapon
@@ -153,13 +172,15 @@ light_dagger:
       material: IRON_SWORD
       damage: 5
       speed:
-        $c: double
+        $c:
+          type: double
+          value: "1.55"
       name: Light Dagger
   sertraline:
     tier: C
 
-# $c: string 大小写转换
-# $c: string with case conversion
+# $c: string 大小写转换（同样需要来源：这里 $t 先产出文本，再 $c 改成大写）
+# $c: string with case conversion (also needs a source: $t produces the text, $c uppercases it)
 echo_helmet:
   $template:
     use: basic_helmet
@@ -167,6 +188,9 @@ echo_helmet:
       material: IRON_HELMET
       armor: 3
       name:
+        $t:
+          type: upper
+          value: "echo helmet"
         $c:
           type: string
           case: uppercase
@@ -201,16 +225,55 @@ shadow_blade:
   sertraline:
     tier: S
 
-# $t: self_increase（每次解析模板时递增）
-# $t: self_increase (increments every time the template is resolved)
-# 与 $template 搭配使用，确保转换器被处理
-# Use with $template to ensure the transformer is processed
+# ==============================
+# 合并规则示例 (Merge Behavior Examples)
+#
+# 条目自己的字段会**递归**合并到模板结果上：只写 lore 不会丢掉模板的 material/name/attributes。
+# 列表默认是"追加"，写 `$list-mode: replace` 则改为"替换"。
+# An entry's own fields are merged **recursively** over the template: setting only `lore` keeps the
+# template's material/name/attributes. Lists append by default; `$list-mode: replace` replaces them.
+# ==============================
+
+# 在模板 lore 之后追加一行
+# Append one extra lore line after the template's lore
+annotated_blade:
+  $template:
+    use: basic_melee_weapon
+    arguments:
+      material: IRON_SWORD
+      name: Annotated Blade
+  xbuilder:
+    lore:
+      - "<gray>Crafted by example."
+  sertraline:
+    tier: C
+
+# 完全替换 lore（不保留模板默认 lore）
+# Replace the lore entirely (template default lore is not kept)
+clean_blade:
+  $template:
+    use: basic_melee_weapon
+    arguments:
+      material: GOLDEN_SWORD
+      name: Clean Blade
+  $list-mode: replace
+  xbuilder:
+    lore:
+      - "<gold>No template lore here."
+  sertraline:
+    tier: B
+
+# ==============================
+# $t: self_increase（自增计数器）
+# $t: self_increase (incrementing counter)
+# 每次展开取得一个序号。同一次展开中的所有引用共享该序号，配置重载会重置计数。
+# Each expansion receives one number shared by all references. Reload starts a new sequence.
+# ==============================
 numbered_token:
   $template:
     use: basic_consumable
     arguments:
       material: PAPER
-      name: "Token #%{number}"
       number:
         $t:
           type: self_increase
@@ -218,3 +281,4 @@ numbered_token:
           to: 999
           step: 1
           step_interval: 1
+      name: "Token #%{number}"

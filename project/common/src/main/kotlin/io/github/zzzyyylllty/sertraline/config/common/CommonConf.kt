@@ -65,7 +65,7 @@ private fun File.repairMangledCommentLines() {
     val text = readText()
     val repaired = text.replace(MANGLED_NULL_COMMENT, "")
     if (repaired != text) {
-        writeText(repaired)
+        writeConfigAtomically(repaired, backup = true)
     }
 }
 
@@ -85,11 +85,23 @@ class SConfigSpec(
     val file: File get() = File(getDataFolder(), fileName)
 
     /** Loads from disk (releasing the bundled resource if absent), then migrates the version and adds missing nodes. Returns whether anything changed. */
-    fun bind(): Boolean {
+    fun bind(): Boolean = bind(recoverBackup = true)
+
+    private fun bind(recoverBackup: Boolean): Boolean {
         if (!file.exists()) {
             releaseResourceFile(fileName, true)
         }
-        config = Configuration.loadFromFile(file)
+        config = try {
+            ConfigReloadGuard.parse(file)
+        } catch (failure: Exception) {
+            val backup = File(file.parentFile, file.name + ".bak")
+            if (!recoverBackup || !backup.isFile) throw failure
+            val recovered = ConfigReloadGuard.parse(backup)
+            file.writeConfigAtomically(backup.readText())
+            recovered.file = file
+            warningL("Config_Reload_Recovered", fileName)
+            recovered
+        }
         val upgraded = upgrade()
         val synced = sync()
         // Clean up `# null` comment lines corrupted by older releases even when this pass needs no migration or node additions.
@@ -97,10 +109,13 @@ class SConfigSpec(
         return upgraded || synced
     }
 
+    internal fun prepare(): SConfigSpec =
+        SConfigSpec(fileName, nodes, version, migrations).also { it.bind(recoverBackup = false) }
+
     /** Saves the configuration and restores blank comment lines that TabooLib serialized as strings (see [MANGLED_NULL_COMMENT]). */
     private fun saveRepaired() {
-        config.saveToFile()
-        file.repairMangledCommentLines()
+        val repaired = config.saveToString().replace(MANGLED_NULL_COMMENT, "")
+        file.writeConfigAtomically(repaired, backup = true)
     }
 
     /** Reads config-version from the file (missing means 0, for files from before versioning was introduced). */
@@ -150,8 +165,7 @@ class SConfigSpec(
         val written = try {
             ConfigTextUpdater.appendMissingNodes(file, nodes, present)
         } catch (e: Exception) {
-            severeL("Config_Load_Error_Parse", fileName, e.message ?: "Unknown error")
-            0
+            throw IllegalArgumentException("Could not synchronize $fileName", e)
         }
         if (written <= 0) return false
 
@@ -163,11 +177,7 @@ class SConfigSpec(
         }
 
         // The disk file has changed; reload the in-memory copy so subsequent reads through SertralineSettings see the new nodes.
-        try {
-            config.reload()
-        } catch (e: Exception) {
-            warningL("Config_Load_Error_Parse", fileName, "reload after sync failed: ${e.message}")
-        }
+        check(ConfigReloadGuard.tryReload(config, fileName)) { "Could not reload $fileName after sync" }
         return true
     }
 }

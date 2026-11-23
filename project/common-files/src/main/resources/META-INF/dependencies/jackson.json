@@ -51,7 +51,9 @@
     "value": "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$jacksonVersion",
     "relocate": [
       "com.fasterxml.jackson",
-      "io.github.zzzyyylllty.sertraline.dep.jackson"
+      "io.github.zzzyyylllty.sertraline.dep.jackson",
+      "org.yaml.snakeyaml",
+      "io.github.zzzyyylllty.sertraline.dep.snakeyaml"
     ],
     "repository": "https://repo1.maven.org/maven2",
     "transitive": true,
@@ -65,22 +67,6 @@
   },
   {
     "value": "com.fasterxml.jackson.dataformat:jackson-dataformat-toml:$jacksonVersion",
-    "relocate": [
-      "com.fasterxml.jackson",
-      "io.github.zzzyyylllty.sertraline.dep.jackson"
-    ],
-    "repository": "https://repo1.maven.org/maven2",
-    "transitive": true,
-    "ignoreOptional": false,
-    "ignoreException": false,
-    "scopes": [
-      "compile",
-      "runtime"
-    ],
-    "external": true
-  },
-  {
-    "value": "com.fasterxml.jackson.core:jackson-annotations:$jacksonVersion",
     "relocate": [
       "com.fasterxml.jackson",
       "io.github.zzzyyylllty.sertraline.dep.jackson"

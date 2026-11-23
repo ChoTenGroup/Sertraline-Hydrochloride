@@ -113,29 +113,19 @@ object SertralineMainConfig {
         SConfigNode("file-load.attribute", "^(?![#!]).*\\.(?i)(yaml|yml|toml|tml|json|conf)$", "Attribute files / 属性文件"),
 
         // ==================== Preloading ====================
+        SConfigNode("script.graaljs.allow-java-type", true, "允许 GraalJS 使用 Java.type；修改后重载配置生效\nAllow GraalJS Java.type lookups; takes effect after reload"),
         SConfigNode("preload.script.graaljs", true, "预编译脚本\nPre-compile scripts"),
         SConfigNode("preload.script.javascript", true, ""),
         SConfigNode("preload.script.jexl", true, ""),
 
         // ==================== Modules ====================
         SConfigNode("modules.common.feature", true, "模块 Modules"),
-        SConfigNode("modules.common.editor", false, ""),
         SConfigNode("modules.sertraline.feature", true, ""),
-        SConfigNode("modules.sertraline.editor", true, ""),
         SConfigNode("modules.xbuilder.feature", true, ""),
-        SConfigNode("modules.xbuilder.editor", true, ""),
-        SConfigNode("modules.itemdef.feature", true, "Gun/Weapon system"),
-        SConfigNode("modules.model.feature", true, "Gun/Weapon system"),
-        SConfigNode("modules.mag.feature", true, "Gun/Weapon system"),
-        SConfigNode("modules.ammo.feature", true, "Gun/Weapon system"),
         SConfigNode("modules.minecraft.feature", true, ""),
-        SConfigNode("modules.minecraft.editor", false, ""),
         SConfigNode("modules.visual.feature", true, ""),
-        SConfigNode("modules.visual.editor", false, ""),
         SConfigNode("modules.mmo.feature", true, ""),
-        SConfigNode("modules.mmo.editor", true, ""),
         SConfigNode("modules.eco.feature", true, ""),
-        SConfigNode("modules.eco.editor", true, ""),
 
         // ==================== Placeholders ====================
         SConfigNode("placeholders.plus", "+", "正负号占位符\nSign placeholders ({plus} / {minus})"),
@@ -185,6 +175,10 @@ object SertralineMainConfig {
         SConfigNode("tags.var", true, ""),
         SConfigNode("tags.dynamic", true, ""),
         SConfigNode("tags.kether", true, ""),
+        SConfigNode("tags.nbt", true, ""),
+        SConfigNode("tags.gem-slot", true, ""),
+        SConfigNode("tags.attribute", true, ""),
+        SConfigNode("tags.context", true, ""),
 
         // ==================== Attributes ====================
         SConfigNode(
@@ -243,11 +237,11 @@ object SertralineMainConfig {
         SConfigNode("messages.common.village-trade-blocked", "<red>This item cannot be traded!</red>", "与村民交易被阻止时显示\nShown when trading with villagers is blocked"),
 
         // ==================== Performance ====================
-        SConfigNode("performance.incremental-loading.enable", true, "增量加载配置，只加载修改过的文件\nIncremental loading, only load modified files"),
+        SConfigNode("performance.incremental-loading.enable", true, "缓存内容未变的工作区文件解析结果\nReuse parsed workspace files when their contents are unchanged"),
         SConfigNode(
             "performance.incremental-loading.monitor",
-            listOf("item", "mapping", "lore-format", "crafting-station"),
-            "监控的文件类型\nFile types to monitor"
+            listOf("item"),
+            "包含 item 时启用工作区解析缓存\nInclude item to cache workspace parsing"
         ),
         SConfigNode(
             "performance.adventure.use-split-replace-list-serialize", false,

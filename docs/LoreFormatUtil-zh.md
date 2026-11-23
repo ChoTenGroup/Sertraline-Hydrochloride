@@ -8,10 +8,10 @@
 
 按指定格式生成 lore 组件列表。格式不存在返回 `null`。
 
-`generateLore(item: ItemStack, sItem: ModernSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): List<Component>?`
+`generateLore(item: ItemStack, sItem: AbstractSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): List<Component>?`
 
 - `item`：要生成 lore 的物品。
-- `sItem`：物品对应的 `ModernSItem` 数据。
+- `sItem`：物品对应的 `AbstractSItem` 数据。
 - `format`：lore 格式名称。
 - `player`：用于占位符解析（可选）。
 - `defaultVars`：额外的默认数据，会合并到物品的 vars 中供占位符解析使用。
@@ -20,15 +20,15 @@
 
 按指定格式生成 lore 并直接设置到物品上，返回修改后的物品。格式不存在则返回原物品（不修改）。
 
-`applyLore(item: ItemStack, sItem: ModernSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): ItemStack`
+`applyLore(item: ItemStack, sItem: AbstractSItem, format: String, player: Player? = null, defaultVars: Map<String, Any?>? = null): ItemStack`
 
 参数含义同 `generateLore`。
 
 ## getFormat
 
-获取已加载的 `LoreFormat` 对象，不存在返回 `null`。
+获取已加载的 `AbstractLoreFormat` 对象，不存在返回 `null`。
 
-`getFormat(format: String): LoreFormat?`
+`getFormat(format: String): AbstractLoreFormat?`
 
 ## getFormatNames
 

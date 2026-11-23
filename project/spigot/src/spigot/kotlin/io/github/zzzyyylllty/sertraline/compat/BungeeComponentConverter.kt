@@ -9,6 +9,8 @@ import net.kyori.adventure.text.ScopedComponent as AdventureScoped
 import net.kyori.adventure.text.SelectorComponent as AdventureSelector
 import net.kyori.adventure.text.TextComponent as AdventureText
 import net.kyori.adventure.text.TranslatableComponent as AdventureTranslatable
+import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.text.format.TextColor
 import net.kyori.adventure.text.format.TextDecoration
 import net.md_5.bungee.api.ChatColor
 import net.md_5.bungee.api.chat.BaseComponent
@@ -18,6 +20,7 @@ import net.md_5.bungee.api.chat.KeybindComponent
 import net.md_5.bungee.api.chat.TextComponent
 import net.md_5.bungee.api.chat.TranslatableComponent
 import java.lang.reflect.Method
+import java.util.Locale
 
 /**
  * adventure Component → bungee BaseComponent (Spigot-specific).
@@ -61,7 +64,7 @@ object BungeeComponentConverter {
     }
 
     private fun applyStyle(node: BaseComponent, style: net.kyori.adventure.text.format.Style) {
-        style.color()?.let { node.color = toBungeeColor(it.asHexString()) }
+        style.color()?.let { node.color = toBungeeColor(it) }
 
         val obf = style.decoration(TextDecoration.OBFUSCATED)
         if (obf == TextDecoration.State.TRUE) node.isObfuscated = true
@@ -105,18 +108,23 @@ object BungeeComponentConverter {
 
     // ── bungee 1.16+ API reflection bridge (v11200 = MC 1.12.2 compile surface lacks these, correctly falls back) ──
 
-    // ChatColor.of(String) is a 1.16+ API; 1.12.2 has no hex color model, so returns null when missing (no color)
+    // ChatColor.of(String) is a 1.16+ API; older servers need the nearest legacy color.
     private val chatColorOfMethod: Method? by lazy {
         try { ChatColor::class.java.getMethod("of", String::class.java) } catch (_: Throwable) { null }
     }
 
-    private fun toBungeeColor(hex: String): ChatColor? {
-        return try {
-            chatColorOfMethod?.invoke(null, "#$hex") as? ChatColor
+    private fun toBungeeColor(color: TextColor): ChatColor {
+        if (color is NamedTextColor) return toLegacyColor(color)
+        val modernColor = try {
+            chatColorOfMethod?.invoke(null, color.asHexString()) as? ChatColor
         } catch (_: Throwable) {
             null
         }
+        return modernColor ?: toLegacyColor(NamedTextColor.nearestTo(color))
     }
+
+    private fun toLegacyColor(color: NamedTextColor): ChatColor =
+        ChatColor.valueOf(NamedTextColor.NAMES.key(color)!!.uppercase(Locale.ROOT))
 
     // ClickEvent.Action.COPY_TO_CLIPBOARD is a 1.16+ enum constant; when absent on 1.12.2, the whole click event is dropped
     private val copyToClipboardAction: ClickEvent.Action? by lazy {

@@ -13,15 +13,25 @@ import taboolib.module.lang.asLangText
  */
 object ReloadCollector {
 
-    @Volatile
-    private var current: ReloadContext? = null
+    private val local = ThreadLocal<ReloadContext>()
+    internal val current: ReloadContext? get() = local.get()
+
+    internal fun <T> withContext(context: ReloadContext?, action: () -> T): T {
+        val original = current
+        if (context == null) local.remove() else local.set(context)
+        return try {
+            action()
+        } finally {
+            if (original == null) local.remove() else local.set(original)
+        }
+    }
 
     fun bind(context: ReloadContext) {
-        current = context
+        local.set(context)
     }
 
     fun unbind() {
-        current = null
+        local.remove()
     }
 
     fun addError(message: String) {

@@ -52,6 +52,11 @@ class PrivateManager {
         }
     }
 
+    internal fun cachedIds(uuid: String, sub: SubManagerType): List<String> = when (sub) {
+        SubManagerType.TEMPORARY -> temporaryCache[uuid]?.keys?.toList().orEmpty()
+        SubManagerType.PERSISTENT -> persistentCache[uuid]?.keys?.toList().orEmpty()
+    }
+
     fun getAll(uuid: String, sub: SubManagerType): Map<String, ModernSItem> {
         return when (sub) {
             SubManagerType.TEMPORARY -> temporaryCache[uuid] ?: emptyMap()

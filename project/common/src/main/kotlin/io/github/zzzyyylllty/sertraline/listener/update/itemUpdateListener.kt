@@ -3,8 +3,7 @@ package io.github.zzzyyylllty.sertraline.listener.update
 import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.function.update.checkAndUpdateItem
 import io.github.zzzyyylllty.sertraline.function.update.updateArmorItems
-import io.github.zzzyyylllty.sertraline.function.update.updateInventoryItems
-import io.github.zzzyyylllty.sertraline.function.update.updatePlayerItems
+import io.github.zzzyyylllty.sertraline.function.update.checkAndUpdateInventoryItem
 import io.github.zzzyyylllty.sertraline.listener.attribute.debounceRefreshStat
 import org.bukkit.block.BlockState
 import org.bukkit.block.DoubleChest
@@ -24,7 +23,11 @@ import taboolib.platform.util.isAir
 fun onPlayerJoin(e: PlayerJoinEvent) {
     if (!SertralineSettings.itemUpdateOnLogin) return
     if (!SertralineSettings.itemUpdateEnabled) return
-    updatePlayerItems(e.player)
+    val player = e.player
+    val inventories = listOf(player.inventory to 41, player.enderChest to player.enderChest.size)
+    scanSlotsLater(player, inventories.flatMap { (inventory, size) -> (0 until size).map { inventory to it } }) {
+        SertralineSettings.itemUpdateOnLogin
+    }
 }
 
 @SubscribeEvent
@@ -95,7 +98,9 @@ fun onInventoryOpen(e: InventoryOpenEvent) {
     val top = e.inventory
     val holder = top.holder
     if (holder !is BlockState && holder !is DoubleChest) return
-    updateInventoryItems(top, player)
+    scanSlotsLater(player, (0 until top.size).map { top to it }) {
+        SertralineSettings.itemUpdateOnContainerOpen && player.openInventory.topInventory == top
+    }
 }
 
 /**
@@ -108,4 +113,24 @@ fun handleArmorSlotChanged(player: Player) {
     if (!SertralineSettings.itemUpdateEnabled) return
     if (!SertralineSettings.itemUpdateOnArmorChange) return
     updateArmorItems(player)
+}
+
+private fun scanSlotsLater(
+    player: Player,
+    slots: List<Pair<org.bukkit.inventory.Inventory, Int>>,
+    active: () -> Boolean,
+) {
+    val pending = slots.iterator()
+    fun scheduleBatch() {
+        submit(delay = 1) {
+            if (!player.isOnline || !SertralineSettings.itemUpdateEnabled || !active()) return@submit
+            repeat(8) {
+                if (!pending.hasNext()) return@submit
+                val (inventory, slot) = pending.next()
+                checkAndUpdateInventoryItem(player, inventory, slot)
+            }
+            if (pending.hasNext()) scheduleBatch()
+        }
+    }
+    scheduleBatch()
 }

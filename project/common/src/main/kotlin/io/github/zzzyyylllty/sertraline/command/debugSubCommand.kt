@@ -185,18 +185,22 @@ object DebugCommand {
     @CommandBody
     val generateItemNameFile = subCommand {
         execute<CommandSender> { sender, context, argument ->
-            val nameConf = Configuration.empty(Type.YAML)
-            itemMap.forEach {
-                val name = it.value.getDeepData("xbuilder:name")
-                    ?: it.value.getDeepData("minecraft:item_name")
-                    ?: it.value.getDeepData("minecraft:custom_name")
-                    ?: it.value.getDeepData("visual:item_name")
-                    ?: it.value.getDeepData("visual:custom_name")
-                    ?: "No name provided."
-                nameConf[it.key] = name
+            submitAsync {
+                val nameConf = Configuration.empty(Type.YAML)
+                itemMap.forEach {
+                    val name = it.value.getDeepData("xbuilder:name")
+                        ?: it.value.getDeepData("minecraft:item_name")
+                        ?: it.value.getDeepData("minecraft:custom_name")
+                        ?: it.value.getDeepData("visual:item_name")
+                        ?: it.value.getDeepData("visual:custom_name")
+                        ?: "No name provided."
+                    nameConf[it.key] = name
+                }
+                nameConf.saveToFile(File(getDataFolder(), "itemoutputnames.yml"))
+                taboolib.common.platform.function.submit {
+                    sender.sendMessage("saved all item names to itemoutputnames.yml")
+                }
             }
-            nameConf.saveToFile(File(getDataFolder(), "itemoutputnames.yml"))
-            sender.sendMessage("saved all item names to itemoutputnames.yml")
         }
     }
 
@@ -204,14 +208,18 @@ object DebugCommand {
     @CommandBody
     val generateItemTierFile = subCommand {
         execute<CommandSender> { sender, context, argument ->
-            val nameConf = Configuration.empty(Type.YAML)
-            itemMap.forEach {
-                val name = it.value.getDeepData("sertraline:tier")
-                    ?: "No tier provided."
-                nameConf[it.key] = name
+            submitAsync {
+                val nameConf = Configuration.empty(Type.YAML)
+                itemMap.forEach {
+                    val name = it.value.getDeepData("sertraline:tier")
+                        ?: "No tier provided."
+                    nameConf[it.key] = name
+                }
+                nameConf.saveToFile(File(getDataFolder(), "itemoutputtiers.yml"))
+                taboolib.common.platform.function.submit {
+                    sender.sendMessage("saved all item tiers to itemoutputtiers.yml")
+                }
             }
-            nameConf.saveToFile(File(getDataFolder(), "itemoutputtiers.yml"))
-            sender.sendMessage("saved all item names to itemoutputtiers.yml")
         }
     }
     @CommandBody

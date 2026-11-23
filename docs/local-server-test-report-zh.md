@@ -1,4 +1,4 @@
-# 本地服务器实测报告（新子系统）
+# 本地服务器实测报告（3.13.0.5 历史记录）
 
 测试环境：`E:\MC\tra\Ets`（Leaf 1.21.4-525，Java 25，离线模式，端口 1082），
 插件 `Sertraline-3.13.0.5-Premium-Standard.jar`，假人 `E:\mineflayer`（mineflayer 4.39.0）。

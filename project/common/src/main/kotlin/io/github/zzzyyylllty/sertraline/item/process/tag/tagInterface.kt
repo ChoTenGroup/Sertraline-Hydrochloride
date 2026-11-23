@@ -36,14 +36,13 @@ class TagProcessorManager {
 
     // Register a processor, using the name as the key for easy management
     fun registerProcessor(name: String, tagAliases: List<String> = listOf(), processor: TagProcessor) {
-        if (!SertralineSettings.rawBoolean("tags.$name", true)) return
         synchronized(mutationLock) {
             reconcilePublicAliases()
             val processors = LinkedHashMap(snapshot.processors).apply { put(name, processor) }
             val nextAliases = LinkedHashMap(snapshot.aliases).apply {
                 put(name, name)
                 for (alias in tagAliases) {
-                    if (SertralineSettings.rawBoolean("tags.$alias", true)) put(alias, name)
+                    put(alias, name)
                 }
             }
             publish(processors, nextAliases)
@@ -92,7 +91,10 @@ class TagProcessorManager {
         val repl: Set<String> = extractPlaceholders(itemJson) ?: return itemJson
 
         // Extract all processor names for prefix matching
-        val processorNames = current.aliases.keys.toList()
+        val settings = SertralineSettings.currentSnapshot()
+        val processorNames = current.aliases.filter { (alias, processor) ->
+            settings.rawBoolean("tags.$alias", true) && settings.rawBoolean("tags.$processor", true)
+        }.keys
 
         // An empty set returns directly
         if (repl.isEmpty()) return itemJson
@@ -152,29 +154,13 @@ class TagProcessorManager {
             }
         }
 
-        var json = itemJson.replacePlaceholderSafety(player)
-
-        devLog("targetRepl: $target")
-
-        target.forEach { (key, value) ->
-            json = if (value != "null" && value != null) {
-                // If the replacement value is not empty
-                json
-                    .replace("\${$key}$", value)
-                    .replace("\"\${$key}$\"", value)
-            } else if (!key.endsWith("!!")) {
-                // If the key is not marked as non-null, i.e. nullable, the value is replaced with null even when it is null.
-                json
-                    .replace("\${$key}$", "null")
-                    .replace("\"\${$key}$\"", "null")
-            } else {
-                // If the key is marked as non-null, the value is replaced with an empty string even when it is null.
-                json.replace("\${$key}$", "")
-                    .replace("\"\${$key}$\"", "")
-            }
+        val json = itemJson.replacePlaceholderSafety(player)
+        if (target.isEmpty()) return json
+        return ITEM_TAG_PATTERN.replace(json) { match ->
+            val key = match.groupValues[1]
+            if (!target.containsKey(key)) match.value
+            else target[key]?.takeUnless { it == "null" } ?: if (key.endsWith("!!")) "" else "null"
         }
-
-        return json
     }
 
     // Can view the currently registered processors
@@ -184,15 +170,16 @@ class TagProcessorManager {
 private fun <K, V> immutableOrderedMap(source: Map<K, V>): Map<K, V> =
     java.util.Collections.unmodifiableMap(LinkedHashMap(source))
 
+private val ITEM_TAG_PATTERN = Regex("\\$\\{(.*?)}\\$")
+
 fun extractPlaceholders(input: String): Set<String>? {
 
     // Return directly if there is no placeholder
     if (!input.contains("\${")) return null
 
-    val regex = "\\$\\{(.*?)}\\$".toRegex() // A regex to match ${xxx}
     val result = mutableSetOf<String>() // Create a Map to store the results
 
-    regex.findAll(input).forEach { matchResult ->
+    ITEM_TAG_PATTERN.findAll(input).forEach { matchResult ->
         val key = matchResult.groupValues[1]
         result.add(key)
     }

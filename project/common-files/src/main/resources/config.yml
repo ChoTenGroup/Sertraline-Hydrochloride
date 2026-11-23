@@ -1,6 +1,6 @@
 # Sertraline Configuration
-# 大部分设置需要重启以应用更改
-# MOST SETTINGS REQUIRED RESTART TO APPLY CHANGES
+# 使用 /sertraline reload 应用运行期设置。数据库和指标配置在启动时读取。
+# Run /sertraline reload to apply runtime settings. Database and metrics settings are read at startup.
 
 # 配置文件结构版本，请勿手动修改
 # Config file schema version, do not modify
@@ -12,6 +12,9 @@ debug: false
 
 # 语言 language
 lang: en_US
+
+# 异步输出普通日志 / Emit ordinary logs asynchronously
+async-logging: true
 
 # FastStats 数据统计（类似 bStats 的匿名使用统计，https://docs.faststats.dev/java）
 # 默认开启，不采集 IP / 玩家数据 / 个人信息；首次启动只提示不上报，重启后才开始提交
@@ -77,6 +80,12 @@ file-load:
 
 
 
+script:
+  graaljs:
+    # 允许 Java.type 查找 Java/Bukkit/插件类；修改后重载配置生效。
+    # Allow Java.type to look up Java/Bukkit/plugin classes; takes effect after reload.
+    allow-java-type: true
+
 preload:
 
   # 预编译脚本
@@ -94,36 +103,27 @@ preload:
 # processor name exactly; unknown keys are ignored and every processor defaults to on.
 # 每一项对应一个物品处理器，`feature: false` 会注销该处理器。
 modules:
+  # 组件编辑器尚未实现 / Component editing is not implemented.
   common:
     feature: true
-    editor: false
   sertraline:
     feature: true
-    editor: true
   xbuilder:
     feature: true
-    editor: true
   minecraft:
     feature: true
-    editor: false
   custom_data:
     feature: true
-    editor: false
   chotenatb:
     feature: true
-    editor: true
   chotenatb_complex:
     feature: true
-    editor: true
   visual:
     feature: true
-    editor: false
   mmo:
     feature: true
-    editor: true
   eco:
     feature: true
-    editor: true
 
 placeholders:
   plus: "+"
@@ -169,8 +169,8 @@ packet:
   # 不启用或不安装packetevents 2.10+ 所有发包功能均不会生效
   # Whether to register the packet handler
   # If not enabled or packetevents 2.10+ is not installed, all packet sending functions will not take effect
-  # 注意: 修改此项需要重启服务器 (reload 不会重新注册 packet handler)
-  # Note: changing this requires a server restart (reload does not re-register the packet handler)
+  # 禁用后重载即停用发包处理。启动时禁用则需重启才能启用。
+  # Reload disables active handlers. Enabling handlers that were off at startup requires a restart.
   register: true
 
   # 是否启用发包Lore
@@ -198,7 +198,9 @@ tags:
   var: true
   dynamic: true
   kether: true
+  context: true
 
+# 默认战斗包使用 sertraline: 命名空间 / Default combat rules use the sertraline: namespace.
 attribute:
 
   # 默认防抖时间
@@ -308,17 +310,13 @@ messages:
     village-trade-blocked: "<red>This item cannot be traded!</red>"
 
 performance:
-  # 增量加载配置，只加载修改过的文件
-  # Incremental loading, only load modified files
+  # 内容不变的物品文件会复用解析结果，模板及物品处理器每次重跑。
+  # Reuse parsed workspace files with identical contents. Templates and item processors run on every reload.
   incremental-loading:
     enable: true
-    # 监控的文件类型
-    # File types to monitor
+    # 包含 item 时启用工作区解析缓存 / Include item to cache workspace parsing
     monitor:
       - item
-      - mapping
-      - lore-format
-      - crafting-station
 
   adventure:
     # 使用将列表替换为带分割符号的单行文本以节省性能开销

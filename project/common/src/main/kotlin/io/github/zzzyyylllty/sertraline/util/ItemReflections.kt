@@ -1,7 +1,5 @@
 package io.github.zzzyyylllty.sertraline.util
 
-import org.bukkit.Bukkit
-
 object ItemReflections {
 
     private val clazz_Holder_Reference by lazy {
@@ -13,7 +11,11 @@ object ItemReflections {
     }
 
     val clazz_ResourceLocation by lazy {
-        Class.forName("net.minecraft.resources.ResourceLocation")
+        getClazzCompat(
+            "net.minecraft.resources.Identifier",
+            "net.minecraft.resources.ResourceLocation",
+            "net.minecraft.resources.MinecraftKey"
+        )
     }
 
     val clazz_ResourceKey by lazy {

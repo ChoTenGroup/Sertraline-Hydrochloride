@@ -6,7 +6,9 @@ import io.github.zzzyyylllty.sertraline.data.defaultData
 import io.github.zzzyyylllty.sertraline.function.kether.runKether
 import io.github.zzzyyylllty.sertraline.util.GraalJsUtil
 import io.github.zzzyyylllty.sertraline.util.ScriptHelper
-import net.kyori.adventure.text.minimessage.MiniMessage
+import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
+import io.github.zzzyyylllty.sertraline.util.minimessage.mmUtil
+import taboolib.common.platform.function.submit
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import taboolib.common.platform.command.CommandBody
@@ -38,55 +40,46 @@ object ApiCommand {
         createModernHelper()
     }
 
-    /** Parse MiniMessage */
+    /** Parse MiniMessage. */
     @CommandBody
     val minimessage = subCommand {
         dynamic("content") {
-            execute<CommandSender> { sender, context, argument ->
-                submitAsync {
-                    val mm = MiniMessage.miniMessage()
-                    // Retrieve the value of the argument
-                    val content = context["content"]
-                    sender.infoS(content) }
+            execute<CommandSender> { sender, context, _ ->
+                PlatformCompat.sendComponent(sender, mmUtil.deserialize(context["content"]))
             }
         }
     }
 
-    /** Kether */
     @CommandBody
     val eval = subCommand {
         dynamic("script") {
-            execute<CommandSender> { sender, context, argument ->
-                submitAsync {
-                    val mm = MiniMessage.miniMessage()
-                    // Retrieve the value of the argument
-                    val content = context["script"]
-                    val ret = runKether(listOf(content), sender)
-                    sender.infoS("<yellow>Kether: <gray>$content")
-                    sender.infoS("<yellow>Return: <gray>${ret.get()}") }
+            execute<CommandSender> { sender, context, _ ->
+                evaluateKether(sender, sender, context["script"])
             }
         }
     }
 
-    /** Kether */
     @CommandBody
     val evalByPlayer = subCommand {
         player("player") {
             dynamic("script") {
-                execute<CommandSender> { sender, context, argument ->
-                    submitAsync {
-                        val tabooPlayer = context.player("player")
-                        val bukkitPlayer = tabooPlayer.castSafely<Player>() as CommandSender
-                        val mm = MiniMessage.miniMessage()
-                        // Retrieve the value of the argument
-                        val content = context["script"]
-                        val ret = runKether(listOf(content), bukkitPlayer)
-                        sender.infoS("<yellow>Kether: <gray>$content")
-                        sender.infoS("<yellow>Return: <gray>${ret.get()}") }
+                execute<CommandSender> { sender, context, _ ->
+                    val player = context.player("player").castSafely<Player>() ?: return@execute
+                    evaluateKether(sender, player, context["script"])
                 }
             }
         }
     }
+
+    private fun evaluateKether(sender: CommandSender, executor: CommandSender, script: String, silent: Boolean = false) {
+        runKether(listOf(script), executor).whenComplete { result, error ->
+            if (!silent || error != null) submit {
+                if (error != null) sender.infoS("<red>Kether failed: ${error.message}")
+                else sender.infoS("<yellow>Return: <gray>$result")
+            }
+        }
+    }
+
     /**
      * JavaScript (JSR 223 / Nashorn path).
      *
@@ -160,12 +153,8 @@ object ApiCommand {
     @CommandBody
     val evalSilent = subCommand {
         dynamic("script") {
-            execute<CommandSender> { sender, context, argument ->
-                submitAsync {
-                    val mm = MiniMessage.miniMessage()
-                    // Retrieve the value of the argument
-                    val content = context["script"]
-                    runKether(listOf(content), sender) }
+            execute<CommandSender> { sender, context, _ ->
+                evaluateKether(sender, sender, context["script"], silent = true)
             }
         }
     }
@@ -175,15 +164,9 @@ object ApiCommand {
     val evalByPlayerSilent = subCommand {
         player("player") {
             dynamic("script") {
-                execute<CommandSender> { sender, context, argument ->
-                    submitAsync {
-                        val tabooPlayer = context.player("player")
-                        val bukkitPlayer = tabooPlayer.castSafely<Player>() as CommandSender
-                        val mm = MiniMessage.miniMessage()
-                        // Retrieve the value of the argument
-                        val content = context["script"]
-                        runKether(listOf(content), bukkitPlayer)
-                    }
+                execute<CommandSender> { sender, context, _ ->
+                    val player = context.player("player").castSafely<Player>() ?: return@execute
+                    evaluateKether(sender, player, context["script"], silent = true)
                 }
             }
         }

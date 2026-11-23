@@ -19,6 +19,7 @@ import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
 import io.github.zzzyyylllty.sertraline.impl.getComponentsFilteredNMS
 import io.github.zzzyyylllty.sertraline.item.gem.GEM_TAG
+import io.github.zzzyyylllty.sertraline.item.gem.copyGemState
 import io.github.zzzyyylllty.sertraline.item.gem.copyGemStateToTag
 import io.github.zzzyyylllty.sertraline.logger.severeS
 import io.github.zzzyyylllty.sertraline.logger.warningS
@@ -42,6 +43,8 @@ import taboolib.module.nms.NMSItemTag.Companion.asNMSCopy
 import taboolib.module.nms.getItemTag
 import taboolib.platform.util.buildItem
 
+
+private val invalidMaterialSources = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
 fun itemSource(str: String,player: Player?): ItemStack {
     // The material field accepts at most two parts: `namespace:id`. Extra parts indicate a configuration error and must not be silently discarded.
@@ -75,14 +78,14 @@ fun itemSource(str: String,player: Player?): ItemStack {
             }
         }
     } catch (e: Exception) {
-        severeS(console.asLangText("Error_External_ItemStack_Generation_Failed",str, e))
-        e.printStackTrace()
+        if (invalidMaterialSources.add(str)) {
+            severeS(console.asLangText("Error_External_ItemStack_Generation_Failed", str, e.message ?: e.javaClass.simpleName))
+        }
         null
     }
     return item ?: run {
-        devLog("Material is null, returning grass block")
-        // 1.13+ enum name, not present on 1.12.2; XMaterial resolves by server version (1.12.2 -> GRASS)
-        ItemStack(XMaterial.GRASS_BLOCK.parseMaterial() ?: Material.STONE)
+        if (invalidMaterialSources.add(str)) warningS("Could not resolve item material '$str'")
+        ItemStack(Material.AIR)
     }
 }
 
@@ -131,7 +134,7 @@ private fun warnMissingTemplate(id: String, action: String) {
  * @param overrideData Overrides specific item data; used to preserve item variables when rebuilding an item, generally not needed by developers. Leave empty to not override.
  * */
 fun sertralineItemBuilder(template: String,player: Player?,source: ItemStack? = null,amount: Int = 1,overrideData: Map<String, Any?>? = null): ItemStack? {
-    return sertralineItemBuilderInternal(template, player, source, amount, overrideData)?.rebuildBypassKeepData(player)
+    return sertralineItemBuilderInternal(template, player, source, amount, overrideData)?.finishInitialBuild(player)
 }
 
 /**
@@ -146,7 +149,7 @@ fun sertralineItemBuilder(template: String,player: Player?,source: ItemStack? = 
  * @param context Runtime context (objects like Player, Event), accessible via the {context:xxx} tag; not persisted to NBT
  * */
 fun sertralineVarItemBuilder(template: String,player: Player?,source: ItemStack? = null,amount: Int = 1,overrideData: Map<String, Any?>? = null, vars: Map<String, Any?>? = null, context: Map<String, Any?>? = null): ItemStack? {
-    return sertralineItemBuilderInternal(template, player, source, amount, overrideData,vars = vars, context = context)?.rebuildBypassKeepData(player)
+    return sertralineItemBuilderInternal(template, player, source, amount, overrideData,vars = vars, context = context)?.finishInitialBuild(player)
 }
 
 /**
@@ -154,7 +157,8 @@ fun sertralineVarItemBuilder(template: String,player: Player?,source: ItemStack?
  * */
 fun sertralineItemBuilderInternal(template: String, player: Player?, source: ItemStack? = null, amount: Int = 1, overrideData: Map<String, Any?>? = null, rebuild: ItemStack? = null, vars: Map<String, Any?>? = null, context: Map<String, Any?>? = null): ItemStack? {
     val isPrivateTemplate = isPrivateItemId(template)
-    val rebuildOwner = if (isPrivateTemplate) rebuild?.let(::privateOwnerUuid) else null
+    val rebuildTag = rebuild?.getItemTag(true)
+    val rebuildOwner = if (isPrivateTemplate) rebuildTag?.get(PRIVATE_OWNER_TAG)?.asString()?.trim()?.takeIf { it.isNotEmpty() } else null
     val privateUuid = if (isPrivateTemplate) {
         rebuildOwner ?: player?.uniqueId?.toString() ?: run {
             try { manager.resolvePrivateUuid(null, null) } catch (_: Exception) { return null }
@@ -205,9 +209,10 @@ fun sertralineItemBuilderInternal(template: String, player: Player?, source: Ite
     // === Alteration: apply template and instance (NBT sertraline_alteration) changes to item data, providing a base for features such as gems ===
     // Folded before serialization so `{var:...}` placeholders render this build's values and not the
     // ones the incoming stack still carries.
-    val appliedAlterations = applyAlterationsToTemplate(pTemplate, rebuild)
+    val appliedAlterations = applyAlterationsFromTag(pTemplate, rebuildTag)
     val processedTemplate = itemSerializer(pTemplate, renderContextStack(rebuild, pTemplate), player)
     val itemSource = source ?: resolveItemSource(processedTemplate, player)
+    if (itemSource.type == Material.AIR) return null
     val item = itemManager.processItem(processedTemplate, itemSource, player)
     item.amount = amount
     val ownerUuid = if (isPrivateItemId(processedTemplate.key)) {
@@ -218,7 +223,7 @@ fun sertralineItemBuilderInternal(template: String, player: Player?, source: Ite
         val tag = item.getItemTag()
         tag.remove(PRIVATE_OWNER_TAG)
         writeAlterationRecordsToTag(tag, appliedAlterations)
-        copyGemStateToTag(tag, rebuild)
+        copyGemState(tag, rebuildTag)
         tag.saveTo(item)
         return item
     } else {
@@ -230,7 +235,7 @@ fun sertralineItemBuilderInternal(template: String, player: Player?, source: Ite
         tag["sertraline_id"] = processedTemplate.storageKey
         if (ownerUuid != null) tag[PRIVATE_OWNER_TAG] = ownerUuid else tag.remove(PRIVATE_OWNER_TAG)
         writeAlterationRecordsToTag(tag, appliedAlterations)
-        copyGemStateToTag(tag, rebuild)
+        copyGemState(tag, rebuildTag)
         // Write the type to NBT
         val typeData = processedTemplate.getDeepData("sertraline:type")
         if (typeData != null) {
@@ -255,7 +260,8 @@ fun sertralineItemBuilderInternal(template: String, player: Player?, source: Ite
 fun sertralineItemBuilderTemporary(template: ModernSItem, player: Player?, source: ItemStack? = null, amount: Int = 1, overrideData: Map<String, Any?>? = null, rebuild: ItemStack? = null): ItemStack? {
     val pTemplate = template.deepCopy()
     val isPrivateTemplate = isPrivateItemId(pTemplate.key)
-    val rebuildOwner = if (isPrivateTemplate) rebuild?.let(::privateOwnerUuid) else null
+    val rebuildTag = rebuild?.getItemTag(true)
+    val rebuildOwner = if (isPrivateTemplate) rebuildTag?.get(PRIVATE_OWNER_TAG)?.asString()?.trim()?.takeIf { it.isNotEmpty() } else null
     val privateUuid = if (isPrivateTemplate) {
         rebuildOwner ?: player?.uniqueId?.toString() ?: run {
             try { manager.resolvePrivateUuid(null, null) } catch (_: Exception) { return null }
@@ -304,7 +310,7 @@ fun ItemStack.rebuild(player: Player?): ItemStack {
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return this
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     val regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, amount = this.amount, rebuild = this)
         ?: run { warnMissingTemplate(sID, "rebuild"); return this }
     val newTag = regen.getItemTag()
@@ -375,22 +381,26 @@ private fun renderContextStack(rebuild: ItemStack?, template: AbstractSItem): It
     return stack
 }
 
+internal fun ItemStack.finishInitialBuild(player: Player?): ItemStack {
+    val tag = getItemTag(true)
+    val template = itemTemplateForStack(this, player, tag) ?: return this
+    // Variables and literals already resolve from the in-memory template during the first pass.
+    // Custom/stack-backed tags and dynamic expressions may depend on the generated stack.
+    if (!template.hasDynamics) {
+        if (!template.hasPlaceholders) return this
+        val tags = template.serialize()?.let { io.github.zzzyyylllty.sertraline.item.process.tag.extractPlaceholders(it) }
+        if (tags.orEmpty().all { it.substringBefore(':') in setOf("val", "var", "context", "papi") }) return this
+    }
+    return rebuildBypassKeepData(player)
+}
+
 fun ItemStack.rebuildBypassKeepData(player: Player?): ItemStack {
 
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return this
 
-    // Fast path: if there is no dynamics and no NBT instance data, rebuilding is redundant
-    val template = itemTemplateForStack(this, player)
-    if (template != null && template.getDeepData("sertraline:dynamics") == null) {
-        val nbtData = tag["sertraline_data"]?.parseMapNBT()
-        if (nbtData == null) {
-            return this // First build, no dynamic content �?rebuild would not change the result
-        }
-    }
-
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     val regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, amount = this.amount, rebuild = this)
         ?: run { warnMissingTemplate(sID, "rebuildBypassKeepData"); return this }
 
@@ -402,7 +412,7 @@ fun ItemStack.rebuildLore(player: Player?) {
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     val regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, rebuild = this) ?: run { warnMissingTemplate(sID, "rebuild"); return }
     PlatformCompat.setLore(this, PlatformCompat.getLore(regen))
 }
@@ -416,7 +426,7 @@ fun ItemStack.rebuildUnsafe(player: Player?) {
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     var regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, rebuild = this) ?: run { warnMissingTemplate(sID, "rebuild"); return }
 
     var rewritedNMS = asNMSCopy(regen)
@@ -439,7 +449,7 @@ fun ItemStack.rebuildName(player: Player?) {
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     val regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, rebuild = this) ?: run { warnMissingTemplate(sID, "rebuild"); return }
     val name = PlatformCompat.getEffectiveName(regen)
     if (VersionHelper.isOrAbove12005()) {
@@ -457,7 +467,7 @@ fun ItemStack.rebuildDisplay(player: Player?) {
     val tag = this.clone().getItemTag(true)
     val sID = tag["sertraline_id"]?.asString() ?: return
     val overrideData = mutableMapOf<String, Any?>()
-    overrideData["sertraline:vars"] = tag["sertraline_data"]?.parseMapNBT()
+    tag["sertraline_data"]?.parseMapNBT()?.let { overrideData["sertraline:vars"] = it }
     val regen = sertralineItemBuilderInternal(sID, player,overrideData = overrideData, rebuild = this) ?: run { warnMissingTemplate(sID, "rebuild"); return }
     PlatformCompat.setLore(this, PlatformCompat.getLore(regen))
     val name = PlatformCompat.getEffectiveName(regen)

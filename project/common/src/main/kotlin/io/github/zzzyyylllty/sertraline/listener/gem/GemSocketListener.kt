@@ -1,15 +1,15 @@
 package io.github.zzzyyylllty.sertraline.listener.gem
 
 import io.github.zzzyyylllty.sertraline.data.isClickSocketEnabled
+import io.github.zzzyyylllty.sertraline.data.getGemDefinition
+import io.github.zzzyyylllty.sertraline.data.getGemSlotDefinitions
 import io.github.zzzyyylllty.sertraline.data.localizedName
 import io.github.zzzyyylllty.sertraline.item.gem.GemRouteDenial
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketMethod
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketPolicy
 import io.github.zzzyyylllty.sertraline.item.gem.GemSocketResult
-import io.github.zzzyyylllty.sertraline.item.gem.getGemDefinition
-import io.github.zzzyyylllty.sertraline.item.gem.getGemSlots
-import io.github.zzzyyylllty.sertraline.item.gem.getUsedGemSlots
-import io.github.zzzyyylllty.sertraline.item.gem.socketGem
+import io.github.zzzyyylllty.sertraline.item.gem.socketKnownGem
+import io.github.zzzyyylllty.sertraline.item.gem.usedGemSlots
 import io.github.zzzyyylllty.sertraline.item.itemTemplateForStack
 import io.github.zzzyyylllty.sertraline.logger.sendStringAsComponent
 import io.github.zzzyyylllty.sertraline.util.isNotExist
@@ -18,6 +18,10 @@ import org.bukkit.event.inventory.InventoryClickEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
 import taboolib.platform.util.asLangText
+import taboolib.module.nms.getItemTag
+import org.bukkit.event.player.PlayerQuitEvent
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Sends a lang node the way the rest of the plugin does.
@@ -49,22 +53,36 @@ private fun Player.sendGemLang(node: String, vararg args: Any) =
  * regular inventory slots. Interception is instead gated on the click actually being
  * a gem-onto-socketable-item interaction, so storing gems in containers still works.
  */
+private val lastSocketAttempt = HashMap<UUID, Long>()
+private val socketInterval = TimeUnit.MILLISECONDS.toNanos(200)
+
+@SubscribeEvent
+fun forgetGemClick(event: PlayerQuitEvent) {
+    lastSocketAttempt.remove(event.player.uniqueId)
+}
+
 @SubscribeEvent(priority = EventPriority.HIGHEST, ignoreCancelled = true)
 fun onGemSocketClick(e: InventoryClickEvent) {
     val player = e.whoClicked as? Player ?: return
+    val denial = GemSocketPolicy.denialOf(GemSocketMethod.CLICK, player, e.click)
+    if (denial == GemRouteDenial.DISABLED || denial == GemRouteDenial.CLICK_TYPE) return
     val gem = e.cursor.takeUnless { it.isNotExist() } ?: return
     val weapon = e.currentItem?.takeUnless { it.isNotExist() } ?: return
 
-    val gemDef = gem.getGemDefinition() ?: return // cursor is not a gem
-    val slots = weapon.getGemSlots()
-    if (slots.isEmpty()) return // target has no sockets
+    if (!gem.hasItemMeta() || !weapon.hasItemMeta()) return
+    val gemTemplate = itemTemplateForStack(gem, player) ?: return
+    val gemDef = gemTemplate.getGemDefinition() ?: return
+    val weaponTag = weapon.getItemTag(true)
+    val weaponTemplate = itemTemplateForStack(weapon, player, weaponTag) ?: return
+    val slots = weaponTemplate.getGemSlotDefinitions()
+    if (slots.isEmpty()) return
 
-    val used = weapon.getUsedGemSlots()
+    val used = usedGemSlots(weaponTag).toSet()
     // First select a socket that accepts this gem and permits click socketing.
     val compatibleSlot = slots.values.firstOrNull { it.id !in used && it.accepts(gemDef.color) }
         ?: return // no compatible free slot — let vanilla handle the click
 
-    val itemClickEnabled = itemTemplateForStack(weapon, null)?.isClickSocketEnabled() ?: true
+    val itemClickEnabled = weaponTemplate.isClickSocketEnabled()
     if (!itemClickEnabled || !gemDef.clickSocket) {
         player.sendGemLang("gem-socket-denied", compatibleSlot.localizedName(player))
         return
@@ -78,7 +96,7 @@ fun onGemSocketClick(e: InventoryClickEvent) {
 
     // The click would have socketed: apply the route gate now, so an unusable gesture
     // stays silent while a permission problem is reported.
-    when (GemSocketPolicy.denialOf(GemSocketMethod.CLICK, player, e.click)) {
+    when (denial) {
         null -> Unit
         GemRouteDenial.PERMISSION -> {
             player.sendGemLang("gem-click-denied")
@@ -89,7 +107,15 @@ fun onGemSocketClick(e: InventoryClickEvent) {
 
     // All validations happen before socketGem touches anything, so a failed attempt
     // leaves the item untouched and the click can still be handled by vanilla.
-    val result = socketGem(player, weapon, gem, target.id, GemSocketMethod.CLICK)
+    val now = System.nanoTime()
+    val previous = lastSocketAttempt[player.uniqueId]
+    if (previous != null && now - previous < socketInterval) {
+        e.isCancelled = true
+        return
+    }
+    lastSocketAttempt[player.uniqueId] = now
+    val result = socketKnownGem(player, weapon, gem, target.id, GemSocketMethod.CLICK,
+        weaponTemplate, weaponTag, gemDef, gemTemplate.storageKey)
     when (result) {
         GemSocketResult.SUCCESS -> {
             e.isCancelled = true

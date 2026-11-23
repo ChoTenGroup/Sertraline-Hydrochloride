@@ -11,6 +11,7 @@ import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import taboolib.module.nms.getItemTag
+import taboolib.module.nms.ItemTag
 import taboolib.platform.util.isAir
 
 fun itemSerializer(itemStack: ItemStack, player: Player?): AbstractSItem? {
@@ -28,11 +29,11 @@ fun itemSerializer(itemStack: ItemStack, player: Player?): AbstractSItem? {
  * marker when present, so rebuilding an item does not accidentally use the
  * current player's private template.
  */
-internal fun itemTemplateForStack(itemStack: ItemStack, player: Player?): AbstractSItem? {
-    val id = itemStack.getItemTag(true)["sertraline_id"]?.asString() ?: return null
+internal fun itemTemplateForStack(itemStack: ItemStack, player: Player?, tag: ItemTag = itemStack.getItemTag(true)): AbstractSItem? {
+    val id = tag["sertraline_id"]?.asString() ?: return null
     if (!isPrivateItemId(id)) return resolveItemTemplate(id)
 
-    val owner = privateOwnerUuid(itemStack)
+    val owner = tag[PRIVATE_OWNER_TAG]?.asString()?.trim()?.takeIf { it.isNotEmpty() }
     val uuid = owner ?: player?.uniqueId?.toString() ?: return null
     return Sertraline.manager.privateManager.getItem(
         uuid,

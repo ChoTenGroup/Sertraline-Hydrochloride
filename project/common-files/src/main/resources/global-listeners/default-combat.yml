@@ -1,0 +1,120 @@
+# 默认战斗属性包 / Default combat pack
+# Synchronous event mutation only. Remove this file to disable the combat rules.
+# Attribute definitions: attributes/default.yml. See docs/DefaultCombatPack-zh.md.
+# Requires script.graaljs.allow-java-type: true in config.yml.
+
+default_combat_projectile_snapshot:
+  bind: org.bukkit.event.entity.ProjectileLaunchEvent
+  priority: HIGH
+  accept-cancelled: false
+  async: false
+  eval:
+    graaljs: |
+      (function () {
+        var AttributeEngine = Java.type('io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeEngine');
+        if (!AttributeEngine.INSTANCE.getEnabled()) return;
+        var LivingEntity = Java.type('org.bukkit.entity.LivingEntity');
+        var AbstractArrow = Java.type('org.bukkit.entity.AbstractArrow');
+        var NamespacedKey = Java.type('org.bukkit.NamespacedKey');
+        var DataType = Java.type('org.bukkit.persistence.PersistentDataType');
+        var projectile = event.getEntity();
+        // Arrows and tridents only: do not turn snowballs/potions into extra attacks.
+        if (event.isCancelled() || !(projectile instanceof AbstractArrow)) return;
+        var shooter = projectile.getShooter();
+        if (!(shooter instanceof LivingEntity)) return;
+        if (!AttributeAPI.isRegistered('sertraline:physical_damage')) return;
+        AttributeAPI.refresh(shooter);
+        var data = projectile.getPersistentDataContainer();
+        var ids = ['physical_damage', 'magic_damage', 'fire_damage', 'poison_damage',
+                   'critical_chance', 'critical_bonus'];
+        for (var i = 0; i < ids.length; i++) {
+          var value = Number(AttributeAPI.getValue(shooter, 'sertraline:' + ids[i]));
+          if (!isFinite(value)) value = 0;
+          data.set(new NamespacedKey('sertraline', 'combat/' + ids[i]), DataType.DOUBLE, value);
+        }
+      })();
+
+default_combat_damage:
+  bind: org.bukkit.event.entity.EntityDamageEvent
+  priority: HIGH
+  accept-cancelled: false
+  async: false
+  eval:
+    graaljs: |
+      (function () {
+        var AttributeEngine = Java.type('io.github.zzzyyylllty.sertraline.attribute.SertralineAttributeEngine');
+        if (!AttributeEngine.INSTANCE.getEnabled()) return;
+        var LivingEntity = Java.type('org.bukkit.entity.LivingEntity');
+        var ByEntity = Java.type('org.bukkit.event.entity.EntityDamageByEntityEvent');
+        var AbstractArrow = Java.type('org.bukkit.entity.AbstractArrow');
+        var NamespacedKey = Java.type('org.bukkit.NamespacedKey');
+        var DataType = Java.type('org.bukkit.persistence.PersistentDataType');
+        var DamageModifier = Java.type('org.bukkit.event.entity.EntityDamageEvent.DamageModifier');
+        var target = event.getEntity();
+        if (event.isCancelled() || !(target instanceof LivingEntity)) return;
+        if (!AttributeAPI.isRegistered('sertraline:physical_defense')) return;
+        var original = Number(event.getDamage());
+        if (!isFinite(original) || original <= 0) return;
+        // Absorption may make final damage zero before bonuses are added.
+        // Only a full shield block suppresses the whole attack, not absorption.
+        if (event.isApplicable(DamageModifier.BLOCKING) &&
+            Number(event.getDamage(DamageModifier.BLOCKING)) <= -original) return;
+        var cause = String(event.getCause().name());
+        var category;
+        switch (cause) {
+          case 'ENTITY_ATTACK': case 'ENTITY_SWEEP_ATTACK': case 'PROJECTILE':
+          case 'CONTACT': case 'ENTITY_EXPLOSION': case 'BLOCK_EXPLOSION':
+          case 'FALLING_BLOCK': case 'FLY_INTO_WALL': case 'THORNS':
+            category = 'physical'; break;
+          case 'MAGIC': case 'DRAGON_BREATH': case 'SONIC_BOOM': case 'WITHER':
+            category = 'magic'; break;
+          case 'FIRE': case 'FIRE_TICK': case 'LAVA': case 'HOT_FLOOR':
+            category = 'fire'; break;
+          case 'POISON': category = 'poison'; break;
+          case 'FALL': category = 'fall'; break;
+          default: return; // Void, starvation, drowning and custom damage stay vanilla.
+        }
+        AttributeAPI.refresh(target);
+        function value(entity, id) {
+          var n = Number(AttributeAPI.getValue(entity, 'sertraline:' + id));
+          return isFinite(n) ? Math.max(0, n) : 0;
+        }
+        function defend(amount, type) {
+          return amount * 100 / (100 + value(target, type + '_defense'));
+        }
+        var attacker = null;
+        var snapshot = null;
+        // Bonus damage/crit only on direct melee hits and arrow/trident impacts.
+        // Thorns, burning, potion damage and explosions cannot recursively trigger bonuses.
+        if (event instanceof ByEntity) {
+          var damager = event.getDamager();
+          if ((cause === 'ENTITY_ATTACK' || cause === 'ENTITY_SWEEP_ATTACK') &&
+              damager instanceof LivingEntity) {
+            attacker = damager;
+            AttributeAPI.refresh(attacker);
+          } else if (cause === 'PROJECTILE' && damager instanceof AbstractArrow) {
+            snapshot = damager.getPersistentDataContainer();
+          }
+        }
+        function offense(id) {
+          if (attacker !== null) return value(attacker, id);
+          if (snapshot === null) return 0;
+          var stored = snapshot.get(new NamespacedKey('sertraline', 'combat/' + id), DataType.DOUBLE);
+          var n = stored === null ? 0 : Number(stored);
+          return isFinite(n) ? Math.max(0, n) : 0;
+        }
+        var damage = defend(original, category);
+        if (attacker !== null || snapshot !== null) {
+          var types = ['physical', 'magic', 'fire', 'poison'];
+          for (var i = 0; i < types.length; i++) {
+            damage += defend(offense(types[i] + '_damage'), types[i]);
+          }
+          if (Math.random() < Math.min(1, offense('critical_chance'))) {
+            damage *= 1 + Math.min(10, offense('critical_bonus'));
+          }
+        }
+        // Mutate this event once; no nested entity.damage() calls.
+        // Bukkit still applies vanilla armor, resistance and other event modifiers.
+        // Skip unnecessary modifier recalculation when no combat rule changes damage.
+        if (isFinite(damage) && damage >= 0 && damage !== original) event.setDamage(damage);
+      })();

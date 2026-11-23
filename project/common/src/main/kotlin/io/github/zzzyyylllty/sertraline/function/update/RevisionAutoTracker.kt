@@ -6,7 +6,8 @@ import io.github.zzzyyylllty.sertraline.Sertraline.itemExpectedRevision
 import io.github.zzzyyylllty.sertraline.Sertraline.itemMap
 import io.github.zzzyyylllty.sertraline.config.common.SertralineSettings
 import io.github.zzzyyylllty.sertraline.debugMode.devLog
-import io.github.zzzyyylllty.sertraline.logger.infoL
+import io.github.zzzyyylllty.sertraline.logger.infoS
+import io.github.zzzyyylllty.sertraline.config.common.writeConfigAtomically
 import io.github.zzzyyylllty.sertraline.logger.warningL
 import io.github.zzzyyylllty.sertraline.util.jsonUtils
 import java.io.File
@@ -31,7 +32,8 @@ fun initRevisionAutoTracker() {
     if (!revisionDir.exists()) revisionDir.mkdirs()
 
     val trackerFile = File(revisionDir, "auto-track.json")
-    val stored: MutableMap<String, RevisionEntry> = loadTrackerFile(trackerFile)
+    val stored = loadTrackerFile(trackerFile) ?: return
+    val revisions = LinkedHashMap<String, Int>()
     val current = mutableMapOf<String, RevisionEntry>()
     var updatedCount = 0
 
@@ -39,7 +41,7 @@ fun initRevisionAutoTracker() {
         // skip auto-tracking if a revision-id is explicitly specified
         val explicit = sItem.getDeepData("sertraline:revision-id")
         if (explicit is Number) {
-            itemExpectedRevision[itemId] = explicit.toInt()
+            revisions[itemId] = explicit.toInt()
             continue
         }
 
@@ -50,26 +52,28 @@ fun initRevisionAutoTracker() {
         if (storedEntry == null) {
             // new item, initialize to revision 1
             current[itemId] = RevisionEntry(hash, 1)
-            itemExpectedRevision[itemId] = 1
+            revisions[itemId] = 1
             updatedCount++
         } else if (storedEntry.hash != hash) {
             // item content changed, increment revision
             val newRevision = storedEntry.revision + 1
             current[itemId] = RevisionEntry(hash, newRevision)
-            itemExpectedRevision[itemId] = newRevision
+            revisions[itemId] = newRevision
             updatedCount++
         } else {
             // unchanged, keep the previous revision
             current[itemId] = RevisionEntry(hash, storedEntry.revision)
-            itemExpectedRevision[itemId] = storedEntry.revision
+            revisions[itemId] = storedEntry.revision
         }
     }
 
     // save the updated tracking data
-    saveTrackerFile(trackerFile, current)
+    if (!saveTrackerFile(trackerFile, current)) return
+    itemExpectedRevision.clear()
+    itemExpectedRevision.putAll(revisions)
 
     if (updatedCount > 0) {
-        infoL("Revision auto-tracker: $updatedCount items updated")
+        infoS("Revision auto-tracker: $updatedCount items updated")
     }
     devLog("Revision auto-tracker: ${itemExpectedRevision.size} items tracked")
 }
@@ -79,32 +83,33 @@ private fun getRevisionDir(): File {
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun loadTrackerFile(file: File): MutableMap<String, RevisionEntry> {
+private fun loadTrackerFile(file: File): MutableMap<String, RevisionEntry>? {
     if (!file.exists()) return mutableMapOf()
     return try {
         val raw = jsonUtils.fromJson(file.readText(), MutableMap::class.java) as? Map<String, Map<String, Any>>
         raw?.mapValues { (_, v) ->
             RevisionEntry(
-                hash = v["hash"] as? String ?: "",
-                revision = (v["revision"] as? Number)?.toInt() ?: 0
+                hash = v["hash"] as? String ?: error("Missing content hash"),
+                revision = (v["revision"] as? Number)?.toInt()?.takeIf { it > 0 } ?: error("Invalid revision")
             )
-        }?.toMutableMap() ?: mutableMapOf()
+        }?.toMutableMap() ?: error("Expected a revision mapping")
     } catch (e: Exception) {
-        devLog("Failed to load revision tracker file: ${e.message}")
-        mutableMapOf()
+        warningL("Warning_Revision_Tracker_Read_Failed", e.message ?: e.javaClass.simpleName)
+        null
     }
 }
 
-private fun saveTrackerFile(file: File, data: Map<String, RevisionEntry>) {
+private fun saveTrackerFile(file: File, data: Map<String, RevisionEntry>): Boolean =
     try {
         val raw = data.mapValues { (_, entry) ->
             mapOf("hash" to entry.hash, "revision" to entry.revision)
         }
-        file.writeText(jsonUtils.toJson(raw))
+        file.writeConfigAtomically(jsonUtils.toJson(raw), backup = true)
+        true
     } catch (e: Exception) {
         warningL("Warning_Revision_Tracker_Save_Failed", e.message ?: e.javaClass.simpleName)
+        false
     }
-}
 
 /**
  * Hashes the item's own config + data.

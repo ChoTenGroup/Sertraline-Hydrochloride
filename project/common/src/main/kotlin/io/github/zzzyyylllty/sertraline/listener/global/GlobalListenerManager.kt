@@ -137,7 +137,6 @@ object GlobalListenerManager {
 
         // ---- Commit: unregister old and register new (main thread; unregister dummyListener as a whole). ----
         unregisterAll()
-        lastFire.clear()
         for (listener in parsed) {
             try {
                 plugin.server.pluginManager.registerEvent(
@@ -160,6 +159,7 @@ object GlobalListenerManager {
 
     /** Unregisters all global listeners */
     fun unregisterAll() {
+        lastFire.clear()
         if (registrations.isEmpty()) return
         try {
             HandlerList.unregisterAll(dummyListener)

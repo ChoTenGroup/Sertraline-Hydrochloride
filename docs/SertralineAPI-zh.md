@@ -4,6 +4,12 @@
 
 所有同步 API 若涉及玩家背包/数据，调用方须在玩家所属线程（主线程或区域线程）内调用。
 
+## 多来源物品 API
+
+SertralineItemAPI 通过 AbstractSItem 提供查询、构建和注册操作。物品 ID 可使用 id、minecraft::id 或 provider::id。兼容接口 Sertraline.api() 仍提供背包、重建、管理器和模板操作。
+
+物品注册和单文件加载需要在配置重载结束后调用。候选期的事件处理器应向事件提供的 LoadContext 写入。
+
 ---
 
 ## 枚举
@@ -36,11 +42,15 @@
 
 ### getItem
 
+已弃用的兼容方法。推荐使用 SertralineItemAPI.getItem.
+
 获取 Sertraline 物品对象（`ModernSItem`），未注册返回 `null`。
 
 `getItem(id: String): ModernSItem?`
 
 ### getAllItems
+
+已弃用的兼容方法。推荐使用 SertralineItemAPI.getAllItems.
 
 获取所有已注册的公共物品，返回 `Map<ID, ModernSItem>`。
 
@@ -68,6 +78,8 @@
 `getId(itemStack: ItemStack): String?`
 
 ### getVal
+
+已弃用的兼容方法。推荐使用 AbstractSItem.getDeepData("sertraline:vals").
 
 从 Sertraline 物品对象读取 val 数据（`sertraline:vals`），键不存在返回 `null`。
 
@@ -191,6 +203,8 @@
 
 ### getPublicItem
 
+已弃用的兼容方法。推荐使用 SertralineItemAPI.getItem.
+
 获取公共物品，默认从持久管理器读取。
 
 `getPublicItem(id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
@@ -202,6 +216,8 @@
 `deletePublicItem(id: String, sub: SubManagerType): Boolean`
 
 ### getAllPublicItems
+
+已弃用的兼容方法。推荐使用 SertralineItemAPI.getAllItems.
 
 获取指定子类型的全部公共物品。
 
@@ -215,6 +231,8 @@
 
 ### getPrivateItem
 
+已弃用的兼容方法。使用 manager.getItem/getAll 读取私有作用域。
+
 获取指定 UUID 的私人物品，默认从持久管理器读取。
 
 `getPrivateItem(uuid: String, id: String, sub: SubManagerType = SubManagerType.PERSISTENT): ModernSItem?`
@@ -227,11 +245,15 @@
 
 ### getAllPrivateItems
 
+已弃用的兼容方法。使用 manager.getItem/getAll 读取私有作用域。
+
 获取指定 UUID 的子类型下的全部私人物品。
 
 `getAllPrivateItems(uuid: String, sub: SubManagerType): Map<String, ModernSItem>`
 
 ### updateSItem（私有物品）
+
+已弃用的兼容方法。使用私有物品管理器更新。
 
 更新指定 UUID 的私人物品。持久管理器会同步更新数据库；返回旧物品，不存在时返回 `null`。
 
@@ -243,11 +265,15 @@
 
 ### registerItem
 
+已弃用的兼容方法。推荐使用 SertralineItemAPI.register.
+
 直接注册物品到 `itemMap`（持久化公共物品）。
 
 `registerItem(id: String, item: ModernSItem): Unit`
 
 ### updateSItem
+
+已弃用的兼容方法。推荐使用 SertralineItemAPI.update.
 
 直接更新 `itemMap` 中的公共物品。返回被替换的旧物品；如果原 ID 不存在则返回 `null`。
 
@@ -259,13 +285,15 @@
 
 ### unregisterItem
 
+已弃用的兼容方法。推荐使用 SertralineItemAPI.unregister.
+
 从 `itemMap` 移除物品，返回被移除的物品（不存在返回 `null`）。
 
 `unregisterItem(id: String): ModernSItem?`
 
 ### getItemCount
 
-获取 `itemMap` 中物品总数。
+统计注册到物品表的全部来源，包括 Sertraline、原版和外部来源。
 
 `getItemCount(): Int`
 

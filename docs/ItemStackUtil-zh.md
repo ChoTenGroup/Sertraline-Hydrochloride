@@ -2,7 +2,6 @@
 
 `ItemStackUtil` 提供物品 NBT 读写与重建相关工具，基于 TabooLib 的 `ItemTag` 和 Sertraline 的物品重建管线。
 
-> vars 系列方法（`getVar` / `hasVar` / `setVar` / `setVarDirect` / `removeVar` / `removeVarDirect`）需要插件版本 **3.11.14+**。
 
 ---
 
@@ -64,7 +63,6 @@ TabooLib 不支持 boolean 类型的 NBT，传入 `true`/`false` 时可用此函
 
 ## vars 系列方法
 
-> 需要插件版本 **3.11.14+**。
 
 对底层 `ItemTag` 深度路径方法的封装，作用域固定为物品的持久化 vars（`sertraline_data` compound）。键支持 `.` 嵌套，如 `"count"` → `sertraline_data.count`、`"foo.bar"` → `sertraline_data.foo.bar`。
 

@@ -48,9 +48,13 @@ object ConfigUtil {
 
     fun getFeature(sItemId: String?, input: Map<*, *>?, feature: String, context: LoadContext? = null): Any? {
         val geted = getFeatureDefault(input, feature, context)
-        val event = FeatureLoadEvent(sItemId, geted, feature, null, context)
+        return dispatchFeature(sItemId, geted, feature, context)
+    }
+
+    private fun dispatchFeature(sItemId: String?, value: Any?, feature: String, context: LoadContext?): Any? {
+        val event = FeatureLoadEvent(sItemId, value, feature, null, context)
         event.call()
-        return event.result ?: geted // if no special treatment was triggered
+        return event.result ?: value
     }
 
 
@@ -63,8 +67,9 @@ object ConfigUtil {
     ): Map<String, Any?> {
         val baseMap = final?.toMutableMap() ?: linkedMapOf()
         features.forEach { feature ->
-            val unparsed = getFeature(sItemId, input, feature, context)
-            unparsed?.let { baseMap[feature] = transformValue(it) }
+            val raw = getFeatureDefault(input, feature, context) ?: return@forEach
+            val result = dispatchFeature(sItemId, raw, feature, context) ?: raw
+            baseMap[feature] = transformValue(result)
         }
         return baseMap
     }

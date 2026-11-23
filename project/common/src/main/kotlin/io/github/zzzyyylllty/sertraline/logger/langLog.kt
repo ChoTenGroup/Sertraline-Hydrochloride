@@ -13,14 +13,15 @@ import io.github.zzzyyylllty.sertraline.util.minimessage.mmUtil
 import org.bukkit.command.CommandSender
 import org.bukkit.command.ConsoleCommandSender
 import taboolib.common.platform.function.submit
-import taboolib.common.platform.function.submit
 import taboolib.module.lang.asLangText
 
 val prefix = "[<gradient:#66ffff:#99ccff:#aa99cc>Sertraline</gradient>]"
 
 
 fun infoL(node: String, vararg args: Any) {
-    consoleSender.infoS(console.asLangText(node, *args))
+    val message = console.asLangText(node, *args)
+    if (ReloadCollector.current != null) consoleSender.infoSSync(message)
+    else consoleSender.infoS(message)
 }
 
 fun infoLSync(node: String, vararg args: Any) {
@@ -29,14 +30,14 @@ fun infoLSync(node: String, vararg args: Any) {
 
 fun severeL(node: String, vararg args: Any) {
     val message = console.asLangText(node, *args)
-    ReloadCollector.addError(message)
-    consoleSender.severeS(message)
+    if (ReloadCollector.current != null) ReloadCollector.addError(message)
+    else consoleSender.severeS(message)
 }
 
 fun warningL(node: String, vararg args: Any) {
     val message = console.asLangText(node, *args)
-    ReloadCollector.addWarning(message)
-    consoleSender.warningS(message)
+    if (ReloadCollector.current != null) ReloadCollector.addWarning(message)
+    else consoleSender.warningS(message)
 }
 
 fun CommandSender?.fineS(message: String, bothSendConsole: Boolean = false) {

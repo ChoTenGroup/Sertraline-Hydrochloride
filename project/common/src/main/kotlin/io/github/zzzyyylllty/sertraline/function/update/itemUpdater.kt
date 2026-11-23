@@ -9,7 +9,7 @@ import io.github.zzzyyylllty.sertraline.impl.getComponentsFilteredNMS
 import io.github.zzzyyylllty.sertraline.impl.setComponentNMS
 import io.github.zzzyyylllty.sertraline.item.adapter.transferBooleanToByte
 import io.github.zzzyyylllty.sertraline.item.itemTemplateForStack
-import io.github.zzzyyylllty.sertraline.item.rebuildBypassKeepData
+import io.github.zzzyyylllty.sertraline.item.finishInitialBuild
 import io.github.zzzyyylllty.sertraline.item.sertralineItemBuilderInternal
 import io.github.zzzyyylllty.sertraline.logger.sendStringAsComponent
 import io.github.zzzyyylllty.sertraline.logger.severeS
@@ -120,7 +120,7 @@ fun getExpectedRevision(itemId: String, player: Player? = null, ownerUuid: Strin
  *    exactly the "the item was updated but still won't stack" report.
  * So the item is now rebuilt from a clean base (`source = null`, like
  * [io.github.zzzyyylllty.sertraline.item.sertralineItemBuilder]) whenever the definition declares
- * its own material, the give path's second pass ([rebuildBypassKeepData]) is mirrored, and only the
+ * its own material. Rendering runs again for stack-dependent expressions, and the
  * state that must survive is carried over: [preserveKeptData] (runtime vars + `rebuild.keep-data`,
  * revision keys excluded) and the components in `rebuild.keep-component` plus
  * [ALWAYS_KEEP_COMPONENT] ([applyKeptComponents] — durability, enchantments and player-written item
@@ -151,7 +151,7 @@ fun buildUpdatedItem(player: Player, itemStack: ItemStack?, force: Boolean = fal
 
     // Clean base when the definition declares its material: the result then equals what
     // /sertraline give (or any other build) produces for the same id.
-    val template = itemTemplateForStack(itemStack, player)
+    val template = itemTemplateForStack(itemStack, player, tag)
     val declaresMaterial = template != null &&
         (template.getDeepData("xbuilder:material") != null || template.getDeepData("minecraft:material") != null)
 
@@ -168,11 +168,8 @@ fun buildUpdatedItem(player: Player, itemStack: ItemStack?, force: Boolean = fal
         // re-bakes `${var:...}` placeholders from the instance data, otherwise they would fall back
         // to the template defaults.
         preserveKeptData(tag, built)
-        // Mirror the give path's second pass, so both paths end up with identical NBT.
-        val rebuilt = built.rebuildBypassKeepData(player)
-        // The adapters rewrite sertraline_data from the template on that pass — restore the runtime
-        // state once more, then re-apply the components that must survive a rebuild.
-        preserveKeptData(tag, rebuilt)
+        val rebuilt = built.finishInitialBuild(player)
+        if (rebuilt !== built) preserveKeptData(tag, rebuilt)
         applyKeptComponents(itemStack, rebuilt)
     } catch (e: Exception) {
         severeS("Failed to rebuild item $sID (rev $currentRevision -> $expectedRevision) for ${player.name}: ${e.message}")
