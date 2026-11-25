@@ -116,19 +116,3 @@ Install the matching Sertraline runtime JAR in the server's `plugins/` directory
 
 For item lookups and construction, use SertralineItemAPI. See [API documentation](docs/SertralineAPI-en.md), [Template Syntax](docs/Template-en.md), and [Default Combat Pack](docs/DefaultCombatPack-en.md).
 
-## Publish to Maven Central
-
-Set the release version in `gradle/libs.version.toml` and provide the Central Portal token and GPG signing credentials through the following environment variables. The Gradle Wrapper maps the two `CENTRAL_SERTRALINE_` variables to the publishing plugin's Gradle properties.
-
-| Environment variable | Value |
-| --- | --- |
-| `CENTRAL_SERTRALINE_USERNAME` | Central Portal token username |
-| `CENTRAL_SERTRALINE_PASSWORD` | Central Portal token password |
-| `CENTRAL_SERTRALINE_GPG_KEY` | Fingerprint of a signing key in the local GnuPG keyring |
-| `ORG_GRADLE_PROJECT_signingInMemoryKey` | ASCII-armored GPG private key |
-| `ORG_GRADLE_PROJECT_signingInMemoryKeyPassword` | GPG key passphrase, if set |
-| `ORG_GRADLE_PROJECT_signingInMemoryKeyId` | GPG key ID when selecting a signing subkey |
-
-For local signing, set `CENTRAL_SERTRALINE_GPG_KEY` to the fingerprint shown by `gpg --list-secret-keys --keyid-format long`. Gradle uses GnuPG on `PATH`, and the GPG agent can prompt for the passphrase. If an in-memory key is supplied, Gradle uses that key.
-
-Run `./gradlew publishToMavenCentral` from the repository root with the default Paper platform, then publish the validated deployment in Central Portal. Use `gradlew.bat` on Windows.
