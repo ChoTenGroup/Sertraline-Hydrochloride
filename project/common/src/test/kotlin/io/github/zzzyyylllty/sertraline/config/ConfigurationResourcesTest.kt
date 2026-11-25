@@ -51,6 +51,44 @@ class ConfigurationResourcesTest {
     }
 
     @Test
+    fun configSyncNestsMissingNodesInLookupableSections() {
+        // A hand-edited file may mix indentation steps (this one has a 4-space `script:` block and a 2-space
+        // `preload:` block). Inferring a single file-wide step from the first deeper line made the inserted node land
+        // deeper than the intended parent -- as a child of the previous scalar/section instead of the target section.
+        // The node then stayed "missing" on every later pass, so each startup appended another misplaced copy.
+        val config = folder.newFile("config.yml")
+        config.writeText(
+            "script:\n" +
+                "    graaljs:\n" +
+                "      allow-java-type: true\n" +
+                "\n" +
+                "preload:\n" +
+                "  script:\n" +
+                "    graaljs: true\n"
+        )
+        val nodes = listOf(
+            SConfigNode("script.graaljs.allow-java-type", true, ""),
+            SConfigNode("preload.script.jexl", true, "Pre-compile scripts"),
+        )
+        assertEquals(1, ConfigTextUpdater.appendMissingNodes(config, nodes, setOf("script.graaljs.allow-java-type")))
+
+        val text = config.readText()
+        assertEquals(1, Regex("^preload:$", RegexOption.MULTILINE).findAll(text).count())
+        assertEquals(1, Regex("^  script:$", RegexOption.MULTILINE).findAll(text).count())
+        assertEquals(
+            mapOf(
+                "script" to mapOf("graaljs" to mapOf("allow-java-type" to true)),
+                "preload" to mapOf("script" to mapOf("graaljs" to true, "jexl" to true)),
+            ),
+            parseToMap(text, "yaml"),
+        )
+
+        // A second pass must be a no-op: the node is now findable where it was written, so nothing is re-appended.
+        assertEquals(0, ConfigTextUpdater.appendMissingNodes(config, nodes, setOf("script.graaljs.allow-java-type", "preload.script.jexl")))
+        assertEquals(text, config.readText())
+    }
+
+    @Test
     fun configSyncPreservesOriginalInBackupAndUsesOriginalLineEndings() {
         val config = folder.newFile("config.yml")
         val before = "\uFEFF# user comment\r\nexample:\r\n  value: custom\r\n"

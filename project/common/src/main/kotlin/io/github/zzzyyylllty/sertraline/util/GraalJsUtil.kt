@@ -21,7 +21,33 @@ import kotlin.collections.set
 
 val GJS_LANG_ID = "js"
 
+/**
+ * Runs [block] with the plugin class loader as the thread's context class loader.
+ *
+ * GraalJS resolves host classes (`Java.type`) through the context class loader that was current when the Context was
+ * created. Bukkit does not set that loader to the plugin's on every thread, so the main server thread's loader (the
+ * server/paperclip one) cannot see plugin classes. Because [GraalJsUtil.contextHolder] caches one Context per thread, the
+ * first eval on such a thread permanently binds that thread to the wrong loader, and every later `Java.type` of a plugin
+ * class fails with "Access to host class ... is not allowed or does not exist" -- typically on every event tick, from the
+ * global listeners. Nashorn already builds its engine from the plugin loader; this keeps GraalJS equivalent.
+ */
+internal inline fun <T> withPluginClassLoader(block: () -> T): T {
+    val thread = Thread.currentThread()
+    val pluginLoader = GraalJsUtil::class.java.classLoader
+    val previous = thread.contextClassLoader
+    if (previous === pluginLoader) return block()
+    return try {
+        thread.contextClassLoader = pluginLoader
+        block()
+    } finally {
+        thread.contextClassLoader = previous
+    }
+}
+
 val globalGJSEngine: Engine by lazy {
+    // Deliberately created without the class-loader swap: TabooLib loads the GraalJS jars into its own dependency
+    // loader, and the Engine discovers the `js` language through the current context class loader. Swapping it to the
+    // plugin loader hides that language and fails with "Could not find option with name js.ecmascript-version".
     Engine.newBuilder(GJS_LANG_ID)
         .allowExperimentalOptions(true)
         .option("js.ecmascript-version", "latest")
@@ -30,7 +56,15 @@ val globalGJSEngine: Engine by lazy {
 }
 
 val hostAccess: HostAccess? by lazy {
-    HostAccess.newBuilder()
+    // Falling back to a context without host access would be far worse than the access they intended: the plugin's own
+    // scripts (global listeners) then fail on every event, which is the failure this file exists to prevent.
+    runCatching { hostAccessBuilder() }.getOrElse { failure ->
+        severeS("GraalJS host access configuration failed, falling back to HostAccess.EXPLICIT: ${failure.message}")
+        HostAccess.EXPLICIT
+    }
+}
+
+private fun hostAccessBuilder(): HostAccess = HostAccess.newBuilder()
 //Allow unrestricted access to all public constructors, methods, or fields of public classes
         .allowPublicAccess(true)
 //Allow client languages to implement any Java interface
@@ -52,7 +86,6 @@ val hostAccess: HostAccess? by lazy {
 //Allow client applications to inherit access to allowed methods
         .allowAccessInheritance(false)
         .build()
-}
 
 object GraalJsUtil {
 
@@ -84,7 +117,7 @@ object GraalJsUtil {
     fun warmUpSource(source: Source) {
         val ctx = newGraalContext()
         try {
-            ctx.eval(source)
+            withPluginClassLoader { ctx.eval(source) }
         } catch (_: Exception) {
             // expected: script may reference runtime-only variables, or Graal may
             // decide not to fully compile a one-shot eval; either case is benign
@@ -105,11 +138,13 @@ object GraalJsUtil {
         if (gjsScriptCache.isEmpty()) return
         val ctx = newGraalContext()
         try {
-            for ((_, source) in gjsScriptCache) {
-                try {
-                    ctx.eval(source)
-                } catch (_: Exception) {
-                    // expected per-source warm-up failure, continue with the next
+            withPluginClassLoader {
+                for ((_, source) in gjsScriptCache) {
+                    try {
+                        ctx.eval(source)
+                    } catch (_: Exception) {
+                        // expected per-source warm-up failure, continue with the next
+                    }
                 }
             }
         } finally {
@@ -123,14 +158,21 @@ object GraalJsUtil {
 
     private fun newGraalContext(allowJavaType: Boolean): Context {
 
-        val context = Context.newBuilder(GJS_LANG_ID)
+        // Read (and so lazily build) the shared engine before swapping the class loader: engine creation discovers the
+        // `js` language through the current context class loader, and TabooLib keeps the GraalJS jars in its own
+        // dependency loader.
+        val engine = globalGJSEngine
+        // The Context itself is created under the plugin loader so host class lookups (Java.type) can see plugin classes.
+        val context = withPluginClassLoader {
+            Context.newBuilder(GJS_LANG_ID)
 //#            .allowAllAccess(true) // too permissive, replaced by the fine-grained config below
 //            .allowHostAccess(hostAccess)
-            .engine(globalGJSEngine)
-            .allowHostAccess(hostAccess ?: HostAccess.ALL) // use fine-grained config
-            .allowHostClassLookup { allowJavaType }
-            .allowHostClassLoading(false) // prevent scripts from loading arbitrary classes via Class.forName
-            .build()
+                .engine(engine)
+                .allowHostAccess(hostAccess ?: HostAccess.EXPLICIT) // fine-grained config; never HostAccess.ALL
+                .allowHostClassLookup { allowJavaType }
+                .allowHostClassLoading(false) // prevent scripts from loading arbitrary classes via Class.forName
+                .build()
+        }
         liveContexts.add(context)
         return context
     }
@@ -197,8 +239,14 @@ object GraalJsUtil {
     /** Graal context re-used per-thread, avoiding creating/destroying a Context on every eval (context creation is the main overhead) */
     private data class CachedContext(val context: Context, val allowJavaType: Boolean)
     private val contextHolder = ThreadLocal<CachedContext>()
-    /** Restore bindings after nested calls. */
-    internal fun <T> withBindings(vars: Map<String, Any?>, block: (Context) -> T): T {
+    /**
+     * Restore bindings after nested calls.
+     *
+     * Wrapped in [withPluginClassLoader] because the cached Context is created on the calling thread: without the swap, a
+     * main-thread (event) eval would bind that thread's Context to the server class loader and lose `Java.type` access to
+     * plugin classes permanently. See [withPluginClassLoader].
+     */
+    internal fun <T> withBindings(vars: Map<String, Any?>, block: (Context) -> T): T = withPluginClassLoader {
         val allowJavaType = javaTypeAllowed()
         val cached = contextHolder.get()
         val context = if (cached != null && cached.allowJavaType == allowJavaType) cached.context else {
@@ -215,7 +263,7 @@ object GraalJsUtil {
                 previous[key] = if (bindings.hasMember(key)) bindings.getMember(key) else null
                 bindings.putMember(key, value)
             }
-            return block(context)
+            block(context)
         } finally {
             for ((key, value) in previous) {
                 if (value == null) bindings.removeMember(key) else bindings.putMember(key, value)

@@ -1,4 +1,5 @@
 import io.izzel.taboolib.gradle.*
+import org.gradle.plugins.signing.SigningExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -11,6 +12,7 @@ plugins {
     java
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.taboolib)
+    alias(libs.plugins.mavenPublish)
 }
 
 version = libs.versions.sertraline.get()
@@ -21,6 +23,7 @@ allprojects {
     apply(plugin = "java-library")
     apply(plugin = "io.izzel.taboolib")
     apply(plugin = "org.jetbrains.kotlin.jvm")
+    apply(plugin = "com.vanniktech.maven.publish.base")
 
     group = "io.github.zzzyyylllty.sertraline"
     version = rootProject.version
@@ -186,10 +189,8 @@ allprojects {
         options.encoding = "UTF-8"
     }
 
-    // Sources jar
-    val sourcesJar by tasks.registering(Jar::class) {
-        from(sourceSets.main.get().allJava)
-        archiveClassifier.set("sources")
+    java {
+        withSourcesJar()
     }
 
     // Javadoc jar
@@ -198,6 +199,56 @@ allprojects {
         archiveClassifier.set("javadoc")
     }
 
+    publishing {
+        publications {
+            register<MavenPublication>("maven") {
+                from(components["java"])
+                artifact(javadocJar)
+
+                pom {
+                    val repository = "https://github.com/ChoTenGroup/Sertraline-Hydrochloride"
+                    name.set("Sertraline")
+                    description.set("An advanced item management plugin for Minecraft.")
+                    url.set(repository)
+                    licenses {
+                        license {
+                            name.set("MIT")
+                            url.set("https://opensource.org/license/mit")
+                            distribution.set("repo")
+                        }
+                    }
+                    developers {
+                        developer {
+                            id.set("zzzyyylllty")
+                            name.set("AkaCandyKAngel")
+                        }
+                    }
+                    scm {
+                        url.set(repository)
+                        connection.set("scm:git:$repository.git")
+                        developerConnection.set("scm:git:ssh://git@github.com/ChoTenGroup/Sertraline-Hydrochloride.git")
+                    }
+                }
+            }
+        }
+    }
+
+    mavenPublishing {
+        publishToMavenCentral()
+        signAllPublications()
+    }
+
+    val localSigningKey = providers.environmentVariable("CENTRAL_SERTRALINE_GPG_KEY").orNull
+    if (!localSigningKey.isNullOrBlank() && !providers.gradleProperty("signingInMemoryKey").isPresent) {
+        extra["signing.gnupg.keyName"] = localSigningKey
+        extra["signing.gnupg.executable"] = findProperty("signing.gnupg.executable") ?: "gpg"
+        extensions.configure<SigningExtension> { useGpgCmd() }
+    }
+
+    tasks.withType<GenerateModuleMetadata>().configureEach {
+        // TabooLib rewrites the JAR in place before its published checksums are calculated.
+        dependsOn(tasks.named("taboolibMainTask"))
+    }
 }
 
 // Compatibility alias for the default platform build.

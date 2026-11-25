@@ -249,4 +249,12 @@ eval "set -- $(
         tr '\n' ' '
     )" '"$@"'
 
+# Map the Sertraline token to the project properties used by the publishing plugin.
+if [ -n "${CENTRAL_SERTRALINE_USERNAME:-}" ]; then
+    export ORG_GRADLE_PROJECT_mavenCentralUsername="$CENTRAL_SERTRALINE_USERNAME"
+fi
+if [ -n "${CENTRAL_SERTRALINE_PASSWORD:-}" ]; then
+    export ORG_GRADLE_PROJECT_mavenCentralPassword="$CENTRAL_SERTRALINE_PASSWORD"
+fi
+
 exec "$JAVACMD" "$@"

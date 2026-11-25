@@ -24,7 +24,13 @@
 @rem ##########################################################################
 
 @rem Set local scope for the variables with windows NT shell
-if "%OS%"=="Windows_NT" setlocal
+setlocal EnableDelayedExpansion
+
+@rem Map the Sertraline token to the project properties used by the publishing plugin.
+@if defined CENTRAL_SERTRALINE_USERNAME set "ORG_GRADLE_PROJECT_mavenCentralUsername=!CENTRAL_SERTRALINE_USERNAME!"
+@if defined CENTRAL_SERTRALINE_PASSWORD set "ORG_GRADLE_PROJECT_mavenCentralPassword=!CENTRAL_SERTRALINE_PASSWORD!"
+@rem Preserve literal exclamation marks in paths and Gradle arguments.
+setlocal DisableDelayedExpansion
 
 set DIRNAME=%~dp0
 if "%DIRNAME%"=="" set DIRNAME=.
@@ -89,6 +95,7 @@ if not ""=="%GRADLE_EXIT_CONSOLE%" exit %EXIT_CODE%
 exit /b %EXIT_CODE%
 
 :mainEnd
-if "%OS%"=="Windows_NT" endlocal
+endlocal
+endlocal
 
 :omega

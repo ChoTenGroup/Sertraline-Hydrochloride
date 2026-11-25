@@ -8,6 +8,7 @@ taboolib = "6.3.0-8f586e4"
 #taboolib = "6.3.0-afd75a7"
 #taboolib = "6.2.4-local-dev"
 taboolibPlugin = "2.0.40"
+mavenPublish = "0.34.0"
 kotlin = "2.2.0"
 nashorn = "15.4"
 jexl = "3.4.0"
@@ -126,3 +127,4 @@ kotlincrypto = ["kotlincrypto-bom", "kotlincrypto-sha2"]
 [plugins]
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 taboolib = { id = "io.izzel.taboolib", version.ref = "taboolibPlugin" }
+mavenPublish = { id = "com.vanniktech.maven.publish.base", version.ref = "mavenPublish" }

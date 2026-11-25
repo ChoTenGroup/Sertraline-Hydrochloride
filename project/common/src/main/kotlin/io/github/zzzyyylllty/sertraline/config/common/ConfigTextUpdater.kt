@@ -13,7 +13,7 @@ import io.github.zzzyyylllty.sertraline.util.serialize.parseToMap
  *
  * Automatic configuration updates only need to add **missing** nodes, so existing text does not need to be rewritten:
  * - Preserve existing lines (values, comments, inline comments, indentation, and key order) as-is.
- * - Insert only missing nodes and their comments at the end of the correct parent section, using inferred indentation.
+ * - Insert only missing nodes and their comments at the end of the correct parent section, using the file's own indentation.
  * - Create missing intermediate sections when a parent section does not exist.
  *
  * Safety policy (prefer omitting a node over inserting it incorrectly):
@@ -72,7 +72,8 @@ object ConfigTextUpdater {
         val contentEnd = if (trailingEmpty) lines.size - 1 else lines.size
 
         val parts = node.path.split('.')
-        val step = detectIndentStep(lines)
+
+        // Indentation is taken from the section being written into (see stepBelow) rather than from one file-wide step.
 
         // ---- Locate existing ancestor sections level by level ----
         var rangeStart = 0
@@ -82,7 +83,7 @@ object ConfigTextUpdater {
         var createFrom = 0                 // Index of the first component that needs to be created.
 
         for (i in 0 until parts.size - 1) {
-            val wantIndent = if (parentIndent < 0) 0 else parentIndent + step
+            val wantIndent = if (parentIndent < 0) 0 else parentIndent + stepBelow(lines, rangeStart, rangeEnd, parentIndent)
             val idx = findSectionLine(lines, rangeStart, rangeEnd, parts[i], wantIndent)
             if (idx < 0) {
                 // A same-named key exists at this level but is not a section (for example, `a: 5`); adding a child here would create duplicate keys.
@@ -99,14 +100,14 @@ object ConfigTextUpdater {
 
         // ---- Assemble the insertion block: missing intermediate sections plus the leaf ----
         val block = ArrayList<String>()
-        var indent = if (parentIndent < 0) 0 else parentIndent + step
+        var indent = if (parentIndent < 0) 0 else parentIndent + stepBelow(lines, rangeStart, rangeEnd, parentIndent)
         for (i in createFrom until parts.size - 1) {
             comments[parts.take(i + 1).joinToString(".")]
                 ?.takeIf { it.isNotBlank() }
                 ?.split('\n')
                 ?.forEach { block += commentLine(indent, it) }
             block += " ".repeat(indent) + parts[i] + ":"
-            indent += step
+            indent += stepBelow(lines, rangeStart, rangeEnd, indent)
         }
 
         val leafKey = parts.last()
@@ -116,7 +117,7 @@ object ConfigTextUpdater {
         node.comment.takeIf { it.isNotBlank() }
             ?.split('\n')
             ?.forEach { block += commentLine(indent, it) }
-        block += renderValue(indent, leafKey, node.default, step)
+        block += renderValue(indent, leafKey, node.default, stepBelow(lines, rangeStart, rangeEnd, indent))
 
         // ---- Concatenate ----
         val out = ArrayList<String>(lines.size + block.size + 2)
@@ -181,6 +182,32 @@ object ConfigTextUpdater {
             i++
         }
         return last + 1
+    }
+
+    /**
+     * Indentation step for children of a key at [parentIndent] inside [from, to).
+     *
+     * Read from the file rather than assuming one step for the whole file: a hand-edited file can mix steps (a 4-space
+     * section next to a 2-space one), and the first deeper line in the file says nothing about the section being edited.
+     * With a file-wide step a node could be written deeper than its target parent, becoming a child of the previous scalar
+     * or section instead. Ancestor lookup requires an exact indentation match, so that node stayed "missing" and every
+     * later pass appended another misplaced copy.
+     */
+    private fun stepBelow(lines: List<String>, from: Int, to: Int, parentIndent: Int): Int {
+        var prev = -1
+        for (i in from until minOf(to, lines.size)) {
+            val line = lines[i]
+            if (line.isBlank()) continue
+            val trimmed = line.trimStart(' ')
+            if (trimmed.startsWith("#")) continue
+            if (!trimmed.contains(':')) continue
+            val indent = indentOf(line)
+            if (indent <= parentIndent) continue
+            if (prev < 0) return indent - parentIndent
+            if (indent > prev) return indent - prev
+            prev = indent
+        }
+        return detectIndentStep(lines)
     }
 
     /** Infers the indentation step from the first child key that is deeper than its parent; defaults to 2 if none is found. */
