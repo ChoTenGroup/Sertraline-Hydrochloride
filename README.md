@@ -114,7 +114,7 @@ For Maven, add this dependency under `<dependencies>` in `pom.xml`.
 
 Install the matching Sertraline runtime JAR in the server's `plugins/` directory and declare `depend: [Sertraline]` in your plugin's `plugin.yml`.
 
-For item lookups and construction, use SertralineItemAPI. See [API documentation](docs/SertralineAPI-en.md), [模板语法](docs/Template-zh.md), and [默认战斗包](docs/DefaultCombatPack-zh.md).
+For item lookups and construction, use SertralineItemAPI. See [API documentation](docs/SertralineAPI-en.md), [Template Syntax (Chinese)](docs/Template-zh.md), and [Default Combat Pack](docs/DefaultCombatPack-en.md).
 
 ## Publish to Maven Central
 
