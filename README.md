@@ -84,12 +84,51 @@ Install JDK 21. Set JAVA_HOME to JDK 21, or set JDK21_HOME to its location when 
 | ./gradlew -Pplatform=spigot build | Spigot jars under plugin/build-spigot/libs |
 | ./gradlew -Pplatform=legacy12 build | Legacy jars under plugin/build-legacy12/libs |
 | ./gradlew :plugin:buildAll | All three platform builds and their tests |
-| ./gradlew :project:common:apiJar | Developer jar under project/common/build/libs |
+| `./gradlew tabooBuildApi` | `project/common/build/libs/Sertraline-X.X.X.X-api.jar` |
 
 Each platform builds against its own server API. The Legacy build targets Java 8 bytecode and omits modern recipe and component features. The build itself uses JDK 21 for every platform.
 
 ## Use as a dependency
 
-Build the developer JAR with :project:common:apiJar. Add that jar to your plugin project's compileOnly classpath alongside the matching server API. The server loads Sertraline from the runtime jar and your plugin should declare its dependency on Sertraline in its plugin description.
+Add Sertraline from Maven Central. For Gradle Kotlin DSL, use the following.
+
+```kotlin
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.github.zzzyyylllty.sertraline:Sertraline:3.13.2.2")
+}
+```
+
+For Maven, add this dependency under `<dependencies>` in `pom.xml`.
+
+```xml
+<dependency>
+    <groupId>io.github.zzzyyylllty.sertraline</groupId>
+    <artifactId>Sertraline</artifactId>
+    <version>3.13.2.2</version>
+</dependency>
+```
+
+Install the matching Sertraline runtime JAR in the server's `plugins/` directory and declare `depend: [Sertraline]` in your plugin's `plugin.yml`.
 
 For item lookups and construction, use SertralineItemAPI. See [API documentation](docs/SertralineAPI-en.md), [模板语法](docs/Template-zh.md), and [默认战斗包](docs/DefaultCombatPack-zh.md).
+
+## Publish to Maven Central
+
+Set the release version in `gradle/libs.version.toml` and provide the Central Portal token and GPG signing credentials through the following environment variables. The Gradle Wrapper maps the two `CENTRAL_SERTRALINE_` variables to the publishing plugin's Gradle properties.
+
+| Environment variable | Value |
+| --- | --- |
+| `CENTRAL_SERTRALINE_USERNAME` | Central Portal token username |
+| `CENTRAL_SERTRALINE_PASSWORD` | Central Portal token password |
+| `CENTRAL_SERTRALINE_GPG_KEY` | Fingerprint of a signing key in the local GnuPG keyring |
+| `ORG_GRADLE_PROJECT_signingInMemoryKey` | ASCII-armored GPG private key |
+| `ORG_GRADLE_PROJECT_signingInMemoryKeyPassword` | GPG key passphrase, if set |
+| `ORG_GRADLE_PROJECT_signingInMemoryKeyId` | GPG key ID when selecting a signing subkey |
+
+For local signing, set `CENTRAL_SERTRALINE_GPG_KEY` to the fingerprint shown by `gpg --list-secret-keys --keyid-format long`. Gradle uses GnuPG on `PATH`, and the GPG agent can prompt for the passphrase. If an in-memory key is supplied, Gradle uses that key.
+
+Run `./gradlew publishToMavenCentral` from the repository root with the default Paper platform, then publish the validated deployment in Central Portal. Use `gradlew.bat` on Windows.

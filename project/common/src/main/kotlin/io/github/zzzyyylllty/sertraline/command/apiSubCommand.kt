@@ -1,11 +1,11 @@
 package io.github.zzzyyylllty.sertraline.command
 
-import io.github.zzzyyylllty.sertraline.Sertraline
 import io.github.zzzyyylllty.sertraline.logger.infoS
 import io.github.zzzyyylllty.sertraline.data.defaultData
 import io.github.zzzyyylllty.sertraline.function.kether.runKether
 import io.github.zzzyyylllty.sertraline.util.GraalJsUtil
 import io.github.zzzyyylllty.sertraline.util.ScriptHelper
+import io.github.zzzyyylllty.sertraline.util.withPluginClassLoader as utilWithPluginClassLoader
 import io.github.zzzyyylllty.sertraline.compat.PlatformCompat
 import io.github.zzzyyylllty.sertraline.util.minimessage.mmUtil
 import taboolib.common.platform.function.submit
@@ -136,18 +136,9 @@ object ApiCommand {
      * Both eval subcommands run on the asynchronous `submitAsync` thread, whose context class loader belongs to
      * the server/paperclip rather than the plugin. `Java.type` and Nashorn class resolution depend on it;
      * without switching loaders, they fail with `ClassNotFoundException` or `Access to host class ... not allowed`.
-     * GraalJS already allows `io.github.zzzyyylllty.sertraline.*`; switching the loader here is the missing step.
+     * `GraalJsUtil` performs the same swap internally for GraalJS; this helper covers the Nashorn (`ScriptHelper`) path.
      */
-    private inline fun <T> withPluginClassLoader(block: () -> T): T {
-        val thread = Thread.currentThread()
-        val previous = thread.contextClassLoader
-        return try {
-            thread.contextClassLoader = Sertraline::class.java.classLoader
-            block()
-        } finally {
-            thread.contextClassLoader = previous
-        }
-    }
+    private inline fun <T> withPluginClassLoader(block: () -> T): T = utilWithPluginClassLoader(block)
 
     /** Kether */
     @CommandBody

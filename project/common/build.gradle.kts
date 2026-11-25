@@ -72,6 +72,12 @@ val apiJar by tasks.registering(Jar::class) {
     from(sourceSets.main.get().output)
 }
 
+tasks.register("tabooBuildApi") {
+    group = "build"
+    description = "Build the Sertraline API JAR"
+    dependsOn(apiJar)
+}
+
 // Classes absent from the legacy12 (v11200 = MC 1.12.2 API) compile surface -> exclude the corresponding files:
 // SmithItemEvent/SmithingInventory (1.16+), TradeSelectEvent (1.14+), 1.12.2 itself has no smithing table;
 // PlayerRiptideEvent / EntityPickupItemEvent (1.13+, separate files); MythicLib surface (io.lumine.*);
